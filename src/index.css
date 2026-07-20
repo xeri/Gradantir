@@ -1,0 +1,94 @@
+@import "tailwindcss";
+
+:root {
+  --gx-bg: #0a0d12;
+  --gx-panel: #0f131a;
+  --gx-line: #1f2733;
+  --gx-amber: #e8a33d;
+  --gx-text: #dfe5ec;
+  color-scheme: dark;
+}
+
+html,
+body {
+  background: var(--gx-bg);
+  color: var(--gx-text);
+}
+
+::selection {
+  background: rgba(232, 163, 61, 0.35);
+}
+
+/* Thin, dark, square scrollbars — part of the machine. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2c3748 transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #2c3748;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Ticker tape */
+.gx-tape {
+  animation: gx-scroll 42s linear infinite;
+  width: max-content;
+}
+@keyframes gx-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.gx-tape:hover {
+  animation-play-state: paused;
+}
+
+/* Blinking block cursor after the wordmark. */
+.gx-cursor {
+  display: inline-block;
+  width: 0.55em;
+  height: 1em;
+  background: var(--gx-amber);
+  margin-left: 0.18em;
+  vertical-align: -0.12em;
+  animation: gx-blink 1.1s steps(1) infinite;
+}
+@keyframes gx-blink {
+  50% { opacity: 0; }
+}
+
+.gx-fade {
+  animation: gx-fade 0.18s ease;
+}
+@keyframes gx-fade {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gx-tape,
+  .gx-cursor,
+  .gx-fade {
+    animation: none;
+  }
+}
+
+.gx-focus:focus-visible {
+  outline: 1px solid var(--gx-amber);
+  outline-offset: 1px;
+}
+
+input[type="number"]::-webkit-inner-spin-button {
+  opacity: 1;
+}
+
+/* Recharts leaves a default focus ring box; keep it quiet. */
+.recharts-wrapper:focus,
+.recharts-surface:focus {
+  outline: none;
+}
