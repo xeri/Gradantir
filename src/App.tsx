@@ -31,6 +31,9 @@ import {
 import { advise } from "./lib/quant/advisor";
 import { IDENTITY_POOL, fitSelfWeight, stakedSittings } from "./lib/quant/pool";
 import { IDENTITY_AI_POOL, aiChargePts, fitAiWeight, poolBoardJoint } from "./lib/quant/aipool";
+import { applySignals } from "./lib/quant/signals/apply";
+import { emptySignalBook, signalBoard, type SignalBook } from "./lib/quant/signals/signalread";
+import { NO_SIGNAL_SKILL, signalSkill } from "./lib/quant/signals/signalskill";
 import { classifyUpcoming } from "./lib/upcoming";
 import { fitDepth } from "./lib/quant/depth";
 import { listedAsOf } from "./lib/listing";
@@ -125,7 +128,15 @@ export default function App() {
   const [register, setRegister] = useState<ForecastLog[]>([]);
   /* Keyed to the ROSTER, TAPE and SETTINGS alone — the only things a replay reads.
      Logging a duel or filing a budget must not re-run it: those change what the
-     board is priced against, never what the model would have forecast. */
+     board is priced against, never what the model would have forecast.
+     `Subject.traits` and `Settings.profile` (D5's life-signals inputs) ride
+     these same two keys — a trait lives on a subject, a profile on settings —
+     but `replayRegister` never reads either: it walks the exam tape and
+     scores the bias model, nothing about the signal channel. Editing a trait
+     or the profile therefore still re-runs this effect; it is churn, not a
+     correctness issue, since the result is identical either way — narrowing
+     the key further to exclude them would save a redundant replay but is not
+     required for this feature to be correct. */
   useEffect(() => {
     if (!data) return;
     let alive = true;
@@ -179,6 +190,62 @@ export default function App() {
      settings toggle and every duel paid for the whole engine twice over. */
   const stats = useMemo(() => applyBias(rawStats, bias), [rawStats, bias]);
 
+  /* THE LIFE-SIGNALS BOOK (D5). One small bundle off the five raw slices plus
+     the person-level profile — no allocation churn beyond the memo itself,
+     since `emptySignalBook`'s frozen empty arrays are reused whenever a slice
+     is absent, so a book that has never touched the feature keeps the exact
+     identity signalread.ts documents as load-bearing. */
+  const signalBook = useMemo<SignalBook>(
+    () => (data
+      ? {
+          topics: data.topics ?? emptySignalBook.topics,
+          topicMarks: data.topicMarks ?? emptySignalBook.topicMarks,
+          sessions: data.sessions ?? emptySignalBook.sessions,
+          rest: data.rest ?? emptySignalBook.rest,
+          disruptions: data.disruptions ?? emptySignalBook.disruptions,
+          profile: data.settings.profile ?? null,
+        }
+      : emptySignalBook),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data?.topics, data?.topicMarks, data?.sessions, data?.rest, data?.disruptions, data?.settings.profile],
+  );
+  /* The per-desk life-signals read, priced against the house's OWN nextExam
+     mean (`stats` — bias-corrected, pre-signal) so mastery's "book says X vs
+     desk Y" comparison is against the same number the board is about to show. */
+  const signalReads = useMemo(
+    () => (data
+      ? signalBoard(
+          data.subjects, signalBook, data.entries, data.upcoming ?? [],
+          new Map(stats.map((s) => [s.sub.id, s.quant?.nextExam.mean ?? null])),
+          todayStr(),
+        )
+      : new Map()),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data?.subjects, signalBook, data?.entries, data?.upcoming, stats],
+  );
+  /* The channel's earned weight (D5). Two-board invariant: this reads the
+     REGISTER and the raw subjects/entries only — never `pooled`, never even
+     `stats` — the same discipline the self/wire pools hold against
+     `rawStats`, just with no board argument to get wrong in the first
+     place. `signalWeighting` follows the other student-input switches'
+     polarity: absent => ON. */
+  const signalFit = useMemo(
+    () => (data
+      ? signalSkill(register, signalBook, data.subjects, data.entries, data.settings.signalWeighting !== false)
+      : NO_SIGNAL_SKILL),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [register, signalBook, data?.subjects, data?.entries, data?.settings.signalWeighting],
+  );
+  /* Signals modify the HOUSE side: shifts `stats`' own nextExam by the earned
+     weight, feeding the existing pool memo below. `rawStats` stays untouched
+     — every fit above still reads raw/register, never this. Identity (same
+     array reference) when the switch is off or no desk's read actually
+     moves anything, the same discipline `applyBias`/`poolBoardJoint` hold. */
+  const signalled = useMemo(
+    () => applySignals(stats, signalReads, signalFit.w, data?.settings.signalWeighting !== false),
+    [stats, signalReads, signalFit.w, data?.settings.signalWeighting],
+  );
+
   /* The credibility pool (§27). Where the desk has been persistently off and
      the student's own calls have not, the next-exam forecast cedes weight to
      them — earned from the realized scores, capped, and widening the band
@@ -212,9 +279,9 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data?.settings.aiWeighting, data?.upcoming, data?.entries, rawById]);
   const pooled = useMemo(
-    () => (data ? poolBoardJoint(stats, data.upcoming ?? [], data.entries, todayStr(), selfFit, aiFit) : stats),
+    () => (data ? poolBoardJoint(signalled, data.upcoming ?? [], data.entries, todayStr(), selfFit, aiFit) : signalled),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data?.upcoming, data?.entries, stats, selfFit, aiFit],
+    [data?.upcoming, data?.entries, signalled, selfFit, aiFit],
   );
   /* What the wire is moving in points right now — measured, for the card copy. */
   const aiCharge = useMemo(
