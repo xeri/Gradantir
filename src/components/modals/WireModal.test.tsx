@@ -171,6 +171,40 @@ describe("the wire modal, end to end", () => {
     expect(host.textContent?.toUpperCase()).toContain("FORECASTING SKILL");
   });
 
+  it("keeps the TOPIC MARKS manifest count live with the TOPICS toggle, not stale", () => {
+    // Review-round finding: TOPIC MARKS depends on TOPICS (and entries) via
+    // filterPayload's cascade. Before the fix, unticking TOPICS while leaving
+    // TOPIC MARKS' own toggle ON left the manifest reading a stale "N NEW"
+    // that would actually merge zero rows — no warning, no recount. The
+    // manifest must show what will actually happen the moment the toggle
+    // changes, without a re-Validate.
+    toPaste();
+    paste(REPLY);
+    click(button(/Validate/i));
+    expect(host.textContent).toContain("TOPIC MARKS");
+    const topicMarksRowBefore = [...host.querySelectorAll("div")]
+      .filter((d) => d.textContent?.includes("TOPIC MARKS") && d.querySelector('[role="switch"]'))
+      .pop();
+    expect(topicMarksRowBefore!.textContent).toContain("1 NEW");
+
+    // Untick TOPICS (its own row) — leave TOPIC MARKS' own toggle untouched.
+    const topicsRow = [...host.querySelectorAll("div")]
+      .filter((d) => d.textContent?.includes("TOPICS") && d.querySelector('[role="switch"]'))
+      .pop();
+    expect(topicsRow).toBeTruthy();
+    click(topicsRow!.querySelector('[role="switch"]')!);
+
+    // The manifest updates itself — no re-Validate needed.
+    const topicMarksRowAfter = [...host.querySelectorAll("div")]
+      .filter((d) => d.textContent?.includes("TOPIC MARKS") && d.querySelector('[role="switch"]'))
+      .pop();
+    expect(topicMarksRowAfter!.textContent).toContain("0 NEW");
+    expect(host.textContent).toContain("unticked above");
+
+    click(button(/Merge in/i));
+    expect(merged[0].topicMarks).toEqual([]);
+  });
+
   it("REPLACE takes two clicks and quotes what it discards", () => {
     toPaste();
     paste(REPLY);

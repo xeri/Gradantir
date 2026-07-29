@@ -7,7 +7,7 @@ import { Toggle } from "../ui/Toggle";
 import { useArmed } from "../ui/useArmed";
 import { buildWirePrompt, type WireOpts } from "../../lib/wire/prompt";
 import { parseWire, type WireParse } from "../../lib/wire/parse";
-import { filterPayload, rehydrateSubjects, reviewWire, type WireReview } from "../../lib/wire/review";
+import { filterPayload, rehydrateSubjects, reviewWire } from "../../lib/wire/review";
 import type { WireSectionKey } from "../../lib/wire/schema";
 import { downloadText } from "../../lib/download";
 import { todayStr } from "../../lib/utils";
@@ -77,7 +77,6 @@ export function WireModal({
 
   const [pasteText, setPasteText] = useState("");
   const [parsed, setParsed] = useState<Extract<WireParse, { ok: true }> | null>(null);
-  const [review, setReview] = useState<WireReview | null>(null);
   const [include, setInclude] = useState<Partial<Record<WireSectionKey, boolean>>>({});
   const [includeForecasts, setIncludeForecasts] = useState(false);
   const replaceArm = useArmed();
@@ -118,16 +117,20 @@ export function WireModal({
     const res = parseWire(pasteText);
     if (!res.ok) {
       setParsed(null);
-      setReview(null);
       setErr(res.error);
       return;
     }
     setErr("");
     setParsed(res);
-    setReview(reviewWire(res, data));
     setInclude({});
     setIncludeForecasts(forecasts);
   };
+
+  // LIVE, not computed once at validate() time: reviewWire takes `include` so
+  // a cascade-blocked section (e.g. TOPIC MARKS once TOPICS is unticked)
+  // shows 0 the moment the student flips the toggle, instead of a stale
+  // count that would merge nothing while still reading "N NEW".
+  const review = useMemo(() => (parsed ? reviewWire(parsed, data, include) : null), [parsed, data, include]);
 
   // Re-hydration runs on BOTH apply paths: even a replace is the same student's
   // same desks, and an echo that dropped a subject field must never wipe it.

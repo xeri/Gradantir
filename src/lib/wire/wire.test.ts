@@ -517,6 +517,43 @@ describe("reviewWire", () => {
     }
   });
 
+  it("reviewWire's manifest tracks the cascade LIVE: TOPICS off zeroes TOPIC MARKS' displayed count, matching what filterPayload will actually merge", () => {
+    // Review-round finding: filterPayload's cascade (topicMarks needs entries
+    // AND topics AND its own toggle) must be visible in the SAME numbers the
+    // manifest shows, or a student can see "1 NEW" beside TOPIC MARKS with
+    // its own toggle still ON, untick TOPICS, and merge zero topic marks
+    // with no warning. reviewWire takes the SAME `include` map filterPayload
+    // does, via the shared `blockedByDependency` rule — one source of truth.
+    const res = parseWire(JSON.stringify(EXAMPLE_PAYLOAD));
+    if (!res.ok) throw new Error("fixture failed");
+
+    // Baseline: nothing excluded yet — matches the pre-existing behaviour.
+    const baseline = reviewWire(res, current, {});
+    const topicMarksBaseline = baseline.sections.find((s) => s.key === "topicMarks")!;
+    expect(topicMarksBaseline.kept).toBeGreaterThan(0);
+    expect(topicMarksBaseline.added).toBeGreaterThan(0);
+    expect(topicMarksBaseline.dropped).toBe(0);
+
+    // TOPICS off, TOPIC MARKS' own toggle left ON (undefined = not excluded).
+    const withTopicsOff = reviewWire(res, current, { topics: false });
+    const topicMarksNow = withTopicsOff.sections.find((s) => s.key === "topicMarks")!;
+    expect(topicMarksNow.kept).toBe(0);
+    expect(topicMarksNow.added).toBe(0);
+    expect(topicMarksNow.updated).toBe(0);
+    expect(topicMarksNow.dropped).toBe(topicMarksBaseline.found);
+    expect(topicMarksNow.reasons.join(" | ")).toContain("topics unticked above");
+
+    // TOPICS itself is unaffected in its OWN row — its own toggle behaves
+    // like every other section's (a static count next to ITS OWN switch),
+    // only the DEPENDENT section (topicMarks) reacts to a dependency toggle.
+    const topicsRow = withTopicsOff.sections.find((s) => s.key === "topics")!;
+    expect(topicsRow.kept).toBe(baseline.sections.find((s) => s.key === "topics")!.kept);
+
+    // filterPayload agrees exactly with what the manifest now shows.
+    const filtered = filterPayload(res.payload, { topics: false }, false);
+    expect(filtered.topicMarks).toHaveLength(topicMarksNow.kept);
+  });
+
   it("lintRow explains casualties in the five life-signal sections", () => {
     const dirty = {
       ...EXAMPLE_PAYLOAD,

@@ -142,9 +142,43 @@ function lintRow(key: WireSectionKey, raw: unknown, i: number, ctx: LintCtx): st
   }
 }
 
+/**
+ * Cross-section dependencies the cascade enforces: a listed section can only
+ * reach the merge while every section named here is ALSO included — the
+ * SINGLE source of truth for that rule, consumed by both `filterPayload`
+ * (what actually merges) and `reviewWire` (what the manifest shows), so the
+ * two can never drift apart the way they did the first time: a student
+ * could see "N NEW" beside TOPIC MARKS with its own toggle ON, untick
+ * TOPICS, and merge zero topic marks with the manifest never having said so.
+ *
+ * Deliberately does NOT include a section's own toggle — that already
+ * behaves like every other section's (a static count next to the toggle
+ * that governs it, exactly as `entries`/`duels`/etc. do); only a
+ * DEPENDENCY toggle needs to invalidate a sibling section's display.
+ */
+const SECTION_DEPENDS_ON: Partial<Record<WireSectionKey, WireSectionKey[]>> = {
+  topicMarks: ["entries", "topics"],
+};
+
+/** Which of `key`'s dependencies (if any) are currently toggled OFF. */
+function blockedByDependency(
+  key: WireSectionKey,
+  include: Partial<Record<WireSectionKey, boolean>>,
+): WireSectionKey[] {
+  const keep = (k: WireSectionKey): boolean => include[k] !== false;
+  return (SECTION_DEPENDS_ON[key] ?? []).filter((dep) => !keep(dep));
+}
+
 export function reviewWire(
   parsed: { payload: ImportPayload; raw: WireRaw },
   current: AppData,
+  /**
+   * The student's current per-section include toggles, so a cascade-blocked
+   * section (see `SECTION_DEPENDS_ON`) can show 0 rather than a stale count.
+   * Optional and defaults to "nothing excluded yet" — the shape `validate()`
+   * calls this with before the student has touched a toggle.
+   */
+  include: Partial<Record<WireSectionKey, boolean>> = {},
 ): WireReview {
   const { payload, raw } = parsed;
   const currentIds: Record<WireSectionKey, Set<string>> = {
@@ -192,17 +226,30 @@ export function reviewWire(
 
   const sections = WIRE_SECTIONS.map((spec): SectionReview => {
     const rawRows = raw[spec.key];
-    const kept = payload[spec.key] as { id: string }[];
-    const keptIds = new Set(kept.map((r) => r.id));
+    // `validationKept` is what the SANITIZER let through — toggle-independent,
+    // the same number this file always computed. `blockers` names any
+    // DEPENDENCY (not this section's own toggle) currently switched off; when
+    // one is, every validated row here is cascade-blocked too, and that is a
+    // DIFFERENT reason than "failed validation" — the rows are fine, they
+    // just can't land without what they reference.
+    const validationKept = payload[spec.key] as { id: string }[];
+    const validKeptIds = new Set(validationKept.map((r) => r.id));
+    const blockers = blockedByDependency(spec.key, include);
+    const cascaded = blockers.length > 0 && validationKept.length > 0;
+    const kept = cascaded ? ([] as { id: string }[]) : validationKept;
     const existing = currentIds[spec.key];
     const updated = kept.filter((r) => existing.has(r.id)).length;
-    const dropped = Math.max(0, rawRows.length - kept.length);
+    const dropped = cascaded ? rawRows.length : Math.max(0, rawRows.length - validationKept.length);
     const reasons: string[] = [];
-    if (dropped > 0) {
+    if (cascaded) {
+      reasons.push(
+        `${spec.key}: ${validationKept.length} row${validationKept.length === 1 ? "" : "s"} excluded — ${blockers.join(" and ")} unticked above`,
+      );
+    } else if (dropped > 0) {
       for (let i = 0; i < rawRows.length && reasons.length < MAX_REASONS; i++) {
         const row = rawRows[i];
         // A raw row whose id survived was kept — its defects were repaired.
-        if (isRecord(row) && typeof row.id === "string" && keptIds.has(row.id)) continue;
+        if (isRecord(row) && typeof row.id === "string" && validKeptIds.has(row.id)) continue;
         const reason = lintRow(spec.key, row, i, lintCtx);
         if (reason) reasons.push(reason);
       }
@@ -321,8 +368,10 @@ export function filterPayload(
     // because `mergeData` merges each section independently with no
     // re-sanitize pass on the result: a topicMark surviving here with its
     // entryId/topicId excluded would sit in state referencing a row this
-    // very merge chose not to add.
-    topicMarks: keep("entries") && topicsKept && keep("topicMarks") ? payload.topicMarks : [],
+    // very merge chose not to add. `blockedByDependency` is the SAME check
+    // `reviewWire` uses to decide what the manifest shows, so the two can
+    // never disagree about which rows actually land.
+    topicMarks: blockedByDependency("topicMarks", include).length === 0 && keep("topicMarks") ? payload.topicMarks : [],
     sessions,
     rest: keep("rest") ? payload.rest : [],
     disruptions: keep("disruptions") ? payload.disruptions : [],
