@@ -20,6 +20,7 @@ import { Compare } from "./views/Compare";
 import { Screener } from "./views/Screener";
 import { Blotter } from "./views/Blotter";
 import { Scorecard } from "./views/scorecard";
+import { Signals } from "./views/signals";
 import { applyBias, computeStats } from "./lib/stats";
 import { fitBias } from "./lib/quant/biascal";
 import { replayRegister } from "./lib/quant/eval/replay";
@@ -56,7 +57,7 @@ import {
 import type { DeriveCtx } from "./lib/derive";
 import type { AppData, ForecastLog, GradeEntry, Settings, Subject, Upcoming } from "./types";
 
-type View = "overview" | "charts" | "compare" | "screener" | "blotter" | "scoreboard";
+type View = "overview" | "charts" | "compare" | "screener" | "blotter" | "scoreboard" | "signals";
 type ModalState =
   | { type: "subject" }
   | { type: "grade"; entry?: GradeEntry; subjectId?: string }
@@ -72,6 +73,7 @@ const TABS: { id: View; label: string }[] = [
   { id: "screener", label: "SCREENER" },
   { id: "blotter", label: "BLOTTER" },
   { id: "scoreboard", label: "SCORECARD" },
+  { id: "signals", label: "SIGNALS" },
 ];
 
 const PHASE_COLOR = { pre: C.amber, open: C.up, post: C.amber, closed: C.faint } as const;
@@ -209,19 +211,23 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [data?.topics, data?.topicMarks, data?.sessions, data?.rest, data?.disruptions, data?.settings.profile],
   );
+  /* The house's OWN nextExam mean per desk (`stats` — bias-corrected,
+     pre-signal), hoisted out of the read below so the SIGNALS view can call
+     `signalRead` again, honestly, for its own per-term `{drop}` ablation —
+     against the identical mean the baseline read below was fitted against. */
+  const modelMeans = useMemo(
+    () => new Map(stats.map((s) => [s.sub.id, s.quant?.nextExam.mean ?? null])),
+    [stats],
+  );
   /* The per-desk life-signals read, priced against the house's OWN nextExam
-     mean (`stats` — bias-corrected, pre-signal) so mastery's "book says X vs
-     desk Y" comparison is against the same number the board is about to show. */
+     mean so mastery's "book says X vs desk Y" comparison is against the same
+     number the board is about to show. */
   const signalReads = useMemo(
     () => (data
-      ? signalBoard(
-          data.subjects, signalBook, data.entries, data.upcoming ?? [],
-          new Map(stats.map((s) => [s.sub.id, s.quant?.nextExam.mean ?? null])),
-          todayStr(),
-        )
+      ? signalBoard(data.subjects, signalBook, data.entries, data.upcoming ?? [], modelMeans, todayStr())
       : new Map()),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data?.subjects, signalBook, data?.entries, data?.upcoming, stats],
+    [data?.subjects, signalBook, data?.entries, data?.upcoming, modelMeans],
   );
   /* The channel's earned weight (D5). Two-board invariant: this reads the
      REGISTER and the raw subjects/entries only — never `pooled`, never even
@@ -500,6 +506,7 @@ export default function App() {
   const setSelfWeighting = setPricing("selfWeighting");
   const setReadinessWeighting = setPricing("readinessWeighting");
   const setAggregateCallWeighting = setPricing("aggregateCallWeighting");
+  const setSignalWeighting = setPricing("signalWeighting");
   /* The wire's switch is the inverse of the factory above — absent means OFF,
      stored only when switched on — so it is written by hand, not through it. */
   const setAiWeighting = (on: boolean) =>
@@ -873,6 +880,21 @@ export default function App() {
                 onRemoveMeanCall={(id) => removeItem("meanCalls", id)}
                 onOpenSubject={setDrawerId}
                 deriveCtx={deriveCtx}
+              />
+            )}
+            {view === "signals" && (
+              <Signals
+                stats={visible}
+                entries={data.entries}
+                upcoming={data.upcoming ?? []}
+                signalBook={signalBook}
+                signalReads={signalReads}
+                modelMeans={modelMeans}
+                signalFit={signalFit}
+                signalOn={data.settings.signalWeighting !== false}
+                todayIso={todayStr()}
+                onSetSignalWeighting={setSignalWeighting}
+                onOpenSubject={setDrawerId}
               />
             )}
           </div>
