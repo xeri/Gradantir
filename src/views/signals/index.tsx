@@ -3,9 +3,12 @@ import { C, FONT, microLabel } from "../../theme";
 import { Panel } from "../../components/ui/Panel";
 import { PricedBanner } from "../../components/ui/PricedBanner";
 import { LogPanels } from "./LogPanels";
+import { MasteryPanel, type SubjectMasteryRead } from "./MasteryPanel";
+import { TraitsEditor, type SubjectTraitsPatch } from "./TraitsEditor";
 import { signalRead, type NextSitting, type SignalBook, type SignalRead, type SignalTermKey } from "../../lib/quant/signals/signalread";
+import { topicMastery, masteryRead } from "../../lib/quant/signals/mastery";
 import type { SignalSkill } from "../../lib/quant/signals/signalskill";
-import type { DisruptionKind, GradeEntry, SessionKind, SubjectStat, Upcoming } from "../../types";
+import type { DisruptionKind, GradeEntry, Profile, SessionKind, SubjectStat, Upcoming } from "../../types";
 
 /**
  * D5 · THE SIGNALS BOARD — the life-signals channel (§D5), on its own floor.
@@ -94,11 +97,23 @@ export interface SignalsProps {
   onLogSession: (subjectId: string, date: string, minutes: number, kind: SessionKind, topicIds: string[]) => void;
   onLogRest: (date: string, hours: number, bedtime: string | null) => void;
   onLogDisruption: (date: string, kind: DisruptionKind, days: number | null, note: string | null) => void;
+  /** Topic add/edit (T17) — file-on-submit, LogPanels' own discipline: App.tsx
+   *  assigns the id for a new topic; editing hands back the topic's own,
+   *  already-known id. */
+  onAddTopic: (subjectId: string, name: string, weightPct: number | null, prereqIds: string[]) => void;
+  onEditTopic: (topicId: string, name: string, weightPct: number | null, prereqIds: string[]) => void;
+  /** Person-level profile (chronotype, test anxiety) — not tied to any one desk. */
+  profile: Profile | null;
+  /** Traits/profile editor (T17) — draft-then-commit sliders; exactly one
+   *  book write per commit, never per drag frame. */
+  onSaveTraits: (subjectId: string, patch: SubjectTraitsPatch) => void;
+  onSaveProfile: (profile: Profile) => void;
 }
 
 export function Signals({
   stats, entries, upcoming, signalBook, signalReads, modelMeans, signalFit, signalOn, todayIso,
   onSetSignalWeighting, onOpenSubject, onLogSession, onLogRest, onLogDisruption,
+  onAddTopic, onEditTopic, profile, onSaveTraits, onSaveProfile,
 }: SignalsProps) {
   /* The live roster to log against — a delisted desk has no line to log a
      study session onto. Rest and disruptions are not subject-scoped at all,
@@ -122,6 +137,29 @@ export function Signals({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stats, signalReads, entries, upcoming, modelMeans, signalBook, todayIso, signalFit.w]);
+
+  /* MASTERY (T17) — computed HERE, once, and handed to `MasteryPanel` as a
+     finished read: the panel itself never calls `topicMastery`/`masteryRead`,
+     the same "the leaf renders, the view computes" split `rows` above already
+     holds for the per-term marginals. Filtering mirrors `signalRead`'s own
+     convention exactly (topics by subjectId, marks by the resulting topic id
+     set, sessions by subjectId) so this is the identical per-subject slice
+     `signalRead` folds the mastery term from — just with the intermediate
+     struct kept, which `SignalRead` itself never publishes. */
+  const masteryBySubject = useMemo(() => {
+    const out = new Map<string, SubjectMasteryRead>();
+    for (const sub of liveSubs) {
+      const subjTopics = signalBook.topics.filter((t) => t.subjectId === sub.id);
+      const subjTopicIds = new Set(subjTopics.map((t) => t.id));
+      const subjMarks = signalBook.topicMarks.filter((mk) => subjTopicIds.has(mk.topicId));
+      const subjSessions = signalBook.sessions.filter((s) => s.subjectId === sub.id);
+      const modelMean = modelMeans.get(sub.id) ?? null;
+      const masteries = topicMastery(subjTopics, subjMarks, subjSessions, entries, sub.traits ?? null, sub.mix ?? null, todayIso);
+      const read = masteryRead(subjTopics, masteries, modelMean, sub.attendancePct ?? null, todayIso);
+      out.set(sub.id, { masteries, read });
+    }
+    return out;
+  }, [liveSubs, signalBook, entries, modelMeans, todayIso]);
 
   return (
     <div className="space-y-4">
@@ -220,6 +258,25 @@ export function Signals({
         onLogRest={onLogRest}
         onLogDisruption={onLogDisruption}
       />
+
+      <Panel title="TOPIC MASTERY">
+        <MasteryPanel
+          subjects={liveSubs}
+          topics={signalBook.topics}
+          masteryBySubject={masteryBySubject}
+          onAddTopic={onAddTopic}
+          onEditTopic={onEditTopic}
+        />
+      </Panel>
+
+      <Panel title="TRAITS & PROFILE">
+        <TraitsEditor
+          subjects={liveSubs}
+          profile={profile}
+          onSaveTraits={onSaveTraits}
+          onSaveProfile={onSaveProfile}
+        />
+      </Panel>
     </div>
   );
 }

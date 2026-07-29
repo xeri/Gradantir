@@ -48,6 +48,11 @@ function render(signalOn = true) {
       onLogSession={() => {}}
       onLogRest={() => {}}
       onLogDisruption={() => {}}
+      onAddTopic={() => {}}
+      onEditTopic={() => {}}
+      profile={null}
+      onSaveTraits={() => {}}
+      onSaveProfile={() => {}}
     />,
   );
 }

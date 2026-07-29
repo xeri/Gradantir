@@ -55,9 +55,10 @@ import {
   derivationModeOff, derivationModeOn, subscribeDerivationMode, toggleDerivationMode,
 } from "./lib/derivationMode";
 import type { DeriveCtx } from "./lib/derive";
+import type { SubjectTraitsPatch } from "./views/signals/TraitsEditor";
 import type {
-  AppData, Disruption, DisruptionKind, ForecastLog, GradeEntry, RestLog, Settings, SessionKind, StudySession,
-  Subject, Upcoming,
+  AppData, Disruption, DisruptionKind, ForecastLog, GradeEntry, Profile, RestLog, Settings, SessionKind, StudySession,
+  Subject, Topic, Upcoming,
 } from "./types";
 
 type View = "overview" | "charts" | "compare" | "screener" | "blotter" | "scoreboard" | "signals";
@@ -549,6 +550,36 @@ export default function App() {
     };
     update({ disruptions: [...(data.disruptions ?? []), disruption] });
   };
+  /* TOPIC ADD/EDIT (T17) — file-on-submit, LogPanels' own discipline (T16):
+     the panel hands back only the values a student typed or picked; the id
+     for a NEW topic is struck here, the one place `uid()` is allowed. Editing
+     carries the topic's own, already-known id — nothing here re-generates it. */
+  const addTopic = (subjectId: string, name: string, weightPct: number | null, prereqIds: string[]) => {
+    const topic: Topic = {
+      id: uid(), subjectId, name, ...(weightPct != null ? { weightPct } : {}), ...(prereqIds.length ? { prereqIds } : {}),
+    };
+    update({ topics: [...(data.topics ?? []), topic] });
+  };
+  const editTopic = (topicId: string, name: string, weightPct: number | null, prereqIds: string[]) =>
+    update({
+      topics: (data.topics ?? []).map((t) => {
+        if (t.id !== topicId) return t;
+        const { weightPct: _w, prereqIds: _p, ...rest } = t;
+        return { ...rest, name, ...(weightPct != null ? { weightPct } : {}), ...(prereqIds.length ? { prereqIds } : {}) };
+      }),
+    });
+  /* TRAITS/PROFILE EDITOR (T17) — draft-then-commit sliders file exactly ONE
+     book write per commit (TraitsEditor.tsx's own doc comment), never one per
+     drag frame. `saveSubjectTraits` patches one desk's shape priors in the
+     SAME `update()` call that also files a profile change would use, so
+     dragging ANY one control on the panel is still exactly one `setData`. */
+  const saveSubjectTraits = (sid: string, patch: SubjectTraitsPatch) =>
+    update({
+      subjects: subjects.map((s) => (s.id === sid
+        ? { ...s, traits: patch.traits, mix: patch.mix, belief: patch.belief, attendancePct: patch.attendancePct }
+        : s)),
+    });
+  const saveProfile = (profile: Profile) => update({ settings: { ...data.settings, profile } });
   const setTarget = (sid: string, target: number | null) =>
     update({ subjects: subjects.map((s) => (s.id === sid ? { ...s, target } : s)) });
   const setCourseworkPct = (sid: string, courseworkPct: number | null) =>
@@ -931,6 +962,11 @@ export default function App() {
                 onLogSession={logSession}
                 onLogRest={logRest}
                 onLogDisruption={logDisruption}
+                onAddTopic={addTopic}
+                onEditTopic={editTopic}
+                profile={data.settings.profile ?? null}
+                onSaveTraits={saveSubjectTraits}
+                onSaveProfile={saveProfile}
               />
             )}
           </div>
