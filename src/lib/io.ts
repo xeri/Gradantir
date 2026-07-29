@@ -249,7 +249,7 @@ function sanitizeSubject(raw: unknown, index: number): Subject | null {
   const formerly = typeof raw.formerly === "string" && raw.formerly ? raw.formerly : null;
   const traits = sanitizeTraits(raw.traits);
   const mix = sanitizeMix(raw.mix);
-  const belief = Number.isInteger(raw.belief) && (raw.belief as number) >= 1 && (raw.belief as number) <= 5 ? (raw.belief as number) : null;
+  const belief = typeof raw.belief === "number" && isFinite(raw.belief) ? clamp(Math.round(raw.belief), 1, 5) : null;
   const attendancePct =
     typeof raw.attendancePct === "number" && isFinite(raw.attendancePct) ? clamp(round1(raw.attendancePct), 0, 100) : null;
   return {
@@ -382,7 +382,7 @@ function sanitizeUpcoming(raw: unknown, ids: Set<string>): Upcoming | null {
   if (chips) out.chips = chips;
   const aiPred = sanitizeAiPred(raw.aiPred);
   if (aiPred) out.aiPred = aiPred;
-  const hour = Number.isInteger(raw.hour) && (raw.hour as number) >= 0 && (raw.hour as number) <= 23 ? (raw.hour as number) : null;
+  const hour = finite(raw.hour) ? clamp(Math.round(raw.hour), 0, 23) : null;
   if (hour != null) out.hour = hour;
   return out;
 }
@@ -831,14 +831,30 @@ export function mergeData(current: AppData, payload: ImportPayload): AppData {
     const id = newEntryId !== undefined || newTopicId !== undefined ? uid() : m.id;
     topicMarkMap.set(id, { ...m, id, entryId: newEntryId ?? m.entryId, topicId: newTopicId ?? m.topicId });
   }
-  // Rest and disruptions carry no subject reference at all — a plain id-keyed
-  // merge, incoming winning on collision, same as the behavioural layer's
-  // helper with no refs to check.
+  // Disruptions carry no subject reference at all — a plain id-keyed merge,
+  // incoming winning on collision, same as the behavioural layer's helper
+  // with no refs to check.
+  //
+  // Rest is NOT plain id-keyed: `sanitizeRestList` guarantees one row per
+  // DATE, and a generic id merge would let a re-logged night (fresh id, same
+  // date) sit beside the old row instead of replacing it — two readings for
+  // one night, straight into live state with no re-sanitize on the way out.
+  // Merge by date instead, incoming winning on a date collision, then dedupe
+  // by id the same way `sanitizeRestList` finishes.
+  const mergeRest = (cur: RestLog[], inc: RestLog[]): RestLog[] => {
+    const byDate = new Map<string, RestLog>();
+    for (const r of cur) byDate.set(r.date, r);
+    for (const r of inc) byDate.set(r.date, r);
+    const seen = new Set<string>();
+    const out: RestLog[] = [];
+    for (const r of byDate.values()) if (!seen.has(r.id)) { seen.add(r.id); out.push(r); }
+    return out;
+  };
   const sig: SignalIntake = {
     topics: [...topicMap.values()],
     topicMarks: [...topicMarkMap.values()],
     sessions: [...sessionMap.values()],
-    rest: mergeCalendar(current.rest ?? [], payload.rest ?? [], () => []),
+    rest: mergeRest(current.rest ?? [], payload.rest ?? []),
     disruptions: mergeCalendar(current.disruptions ?? [], payload.disruptions ?? [], () => []),
   };
   return {

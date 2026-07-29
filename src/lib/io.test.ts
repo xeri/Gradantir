@@ -547,6 +547,23 @@ describe("the life-signals slices (v10)", () => {
     expect(JSON.parse(serializeExport(book)).version).toBe(10);
   });
 
+  it("clamps belief and hour into range rather than dropping them", () => {
+    const dirty = {
+      ...book,
+      subjects: [{ ...book.subjects[0], belief: 9 }, book.subjects[1]],
+      upcoming: [
+        { id: "u1", subjectId: "s1", date: "2026-09-01", type: "Exam", title: "", hour: 26 },
+        { id: "u2", subjectId: "s1", date: "2026-09-02", type: "Exam", title: "", hour: -1 },
+      ],
+    };
+    const res = parseImport(JSON.stringify({ app: "grade-exchange", version: 10, data: dirty }));
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.payload.subjects[0].belief).toBe(5);
+    expect(res.payload.upcoming[0].hour).toBe(23);
+    expect(res.payload.upcoming[1].hour).toBe(0);
+  });
+
   it("signalWeighting: true or absent is not stored; only false round-trips", () => {
     expect(sanitizeSettings({ ...freshSettings(), signalWeighting: true }).signalWeighting).toBeUndefined();
     expect(sanitizeSettings(freshSettings()).signalWeighting).toBeUndefined();
@@ -599,6 +616,18 @@ describe("the life-signals slices (v10)", () => {
     expect(res.payload.rest).toHaveLength(1);
     expect(res.payload.rest[0].id).toBe("r2");
     expect(res.payload.rest[0].hours).toBe(14);
+  });
+
+  it("merge keeps rest one-row-per-date: re-logging a night under a fresh id replaces, never doubles, the old reading", () => {
+    const mine: AppData = { ...book, rest: [{ id: "r-old", date: "2026-05-09", hours: 6 }] };
+    const incoming = parseImport(serializeExport({
+      ...book,
+      rest: [{ id: "r-new", date: "2026-05-09", hours: 8 }],
+    }));
+    if (!incoming.ok) throw new Error("fixture failed to parse");
+    const out = mergeData(mine, incoming.payload);
+    expect(out.rest).toHaveLength(1);
+    expect(out.rest?.[0]).toEqual({ id: "r-new", date: "2026-05-09", hours: 8 });
   });
 
   it("clamps disruption days to 60", () => {
