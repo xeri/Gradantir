@@ -1,5 +1,6 @@
 import { avg, pDate, round1, shortDate } from "./utils";
-import { periodInfo } from "./periods";
+import { entryPeriod } from "./periods";
+import { DEFAULT_CALENDAR, type SchoolCalendar } from "./calendar";
 import { linreg } from "./regression";
 import { clamp } from "./utils";
 import { weightedAvg, type WeightFn } from "./weights";
@@ -27,11 +28,12 @@ export function buildGroupedRows(
   mode: PeriodMode,
   typeFilter: TypeFilter,
   wf: WeightFn = UNIT_WEIGHT,
+  cal: SchoolCalendar = DEFAULT_CALENDAR,
 ): ChartRow[] {
   const filtered = typeFilter === "all" ? entries : entries.filter((e) => e.type === typeFilter);
   const map = new Map<string, { key: string; label: string; sums: Record<string, { v: number; w: number }[]> }>();
   for (const e of filtered) {
-    const { key, label } = periodInfo(e.date, mode);
+    const { key, label } = entryPeriod(e, mode, cal);
     if (!map.has(key)) map.set(key, { key, label, sums: {} });
     const r = map.get(key)!;
     (r.sums[e.subjectId] ||= []).push({ v: e.score, w: wf(e) });
@@ -87,8 +89,41 @@ export function addMovingAvg(rows: ChartRow[], subjectIds: string[], win = 3): v
   }
 }
 
+/**
+ * The least-squares fit behind one subject's dashed segment.
+ *
+ * Published rather than recomputed: §24's derivation layer quotes this, and a
+ * research note that re-derived the line could disagree with the line drawn.
+ */
+export interface TrendFit {
+  slope: number;
+  intercept: number;
+  /** Residual sd of the fit — how far the line misses its own points. */
+  sigma: number;
+  /** Points the fit used (the last ≤10 of the series). */
+  used: number;
+  /** Points the series has in total. */
+  n: number;
+  /** x of the projected point, in the units the fit ran on. */
+  xNext: number;
+  /** slope·xNext + intercept, BEFORE the clip to [0,100]. */
+  raw: number;
+  /** What the chart actually draws. */
+  pred: number;
+  /** The fitted window, oldest first. */
+  pts: { x: number; y: number }[];
+  /** What one step of x means — "DAY" in time mode, "PERIOD" otherwise. */
+  unit: string;
+}
+
 /** Extends rows with a dashed `<sid>_fc` series ending at a projected next point. */
-export function addForecast(rows: ChartRow[], subjectIds: string[], mode: PeriodMode): ChartRow[] {
+export function addForecast(
+  rows: ChartRow[],
+  subjectIds: string[],
+  mode: PeriodMode,
+  /** Optional out-parameter: each subject's fit, for the derivation layer. */
+  fits?: Record<string, TrendFit>,
+): ChartRow[] {
   if (rows.length < 2) return rows;
   const out = rows.map((r) => ({ ...r }));
   if (mode === "assessment") {
@@ -105,10 +140,21 @@ export function addForecast(rows: ChartRow[], subjectIds: string[], mode: Period
         if (typeof v === "number") pts.push({ x: ((r.t as number) - ts[0]) / 864e5, y: v, row: r });
       });
       if (pts.length < 3) continue;
-      const { slope, intercept } = linreg(pts.slice(-10));
-      const pred = clamp(round1(slope * ((tNext - ts[0]) / 864e5) + intercept), 0, 100);
+      const win = pts.slice(-10);
+      const { slope, intercept, sigma } = linreg(win);
+      const xNext = (tNext - ts[0]) / 864e5;
+      const raw = slope * xNext + intercept;
+      const pred = clamp(round1(raw), 0, 100);
       pts[pts.length - 1].row[sid + "_fc"] = pts[pts.length - 1].y;
       nextRow[sid + "_fc"] = pred;
+      if (fits) {
+        fits[sid] = {
+          slope, intercept, sigma,
+          used: win.length, n: pts.length, xNext, raw, pred,
+          pts: win.map((p) => ({ x: p.x, y: p.y })),
+          unit: "DAY",
+        };
+      }
       any = true;
     }
     return any ? [...out, nextRow] : out;
@@ -123,10 +169,22 @@ export function addForecast(rows: ChartRow[], subjectIds: string[], mode: Period
     });
     if (seq.length < 3) continue;
     const pts = seq.map((s, i) => ({ x: i, y: s.v })).slice(-10);
-    const { slope, intercept } = linreg(pts.map((p, i) => ({ x: i, y: p.y })));
-    const pred = clamp(round1(slope * pts.length + intercept), 0, 100);
+    // Re-indexed from 0 inside the window, so the projection is one step past
+    // the window's own last point rather than past the whole series.
+    const win = pts.map((p, i) => ({ x: i, y: p.y }));
+    const { slope, intercept, sigma } = linreg(win);
+    const raw = slope * pts.length + intercept;
+    const pred = clamp(round1(raw), 0, 100);
     seq[seq.length - 1].row[sid + "_fc"] = seq[seq.length - 1].v;
     nextRow[sid + "_fc"] = pred;
+    if (fits) {
+      fits[sid] = {
+        slope, intercept, sigma,
+        used: win.length, n: seq.length, xNext: pts.length, raw, pred,
+        pts: win,
+        unit: "PERIOD",
+      };
+    }
     any = true;
   }
   return any ? [...out, nextRow] : out;

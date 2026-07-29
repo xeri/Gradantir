@@ -12,7 +12,11 @@ export const C = {
   lineBright: "#2C3748",
   text: "#DFE5EC",
   dim: "#97A1B2",
-  faint: "#5C6779",
+  /* 4.6:1 on `panel`. This is the most-used text colour in the app — field
+     labels, axis ticks, footnotes, the whole derivation panel — and at the old
+     #5C6779 it sat at 3.25:1, under the 4.5:1 floor everywhere it appeared.
+     Still the quietest grey on the board; now actually readable at 10px. */
+  faint: "#7A8497",
   /** Chrome + warnings — the terminal's signature color. */
   amber: "#E8A33D",
   up: "#2FD980",

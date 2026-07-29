@@ -1,6 +1,12 @@
 import { avg, round1 } from "./utils";
 import type { ChartRow } from "./grouping";
-import type { CompositeIndex, SubjectStat } from "../types";
+
+/**
+ * The chart-row composite overlay: the raw equal-weight average of the scores
+ * actually plotted on a row. The headline index is elsewhere — GX COMPOSITE is
+ * the model price index (`quant/aggregate.ts`); this is the honest raw line
+ * drawn over the board.
+ */
 
 /** Equal-weight mean of the subject values present on one chart row. */
 export function rowComposite(row: ChartRow, subjectIds: string[]): number | null {
@@ -20,16 +26,4 @@ export function addComposite(rows: ChartRow[], subjectIds: string[]): void {
     const v = rowComposite(row, subjectIds);
     if (v != null) row[COMP_KEY] = v;
   }
-}
-
-/**
- * The headline index: mean of each subject's current-term average
- * (falling back to its overall average), with delta vs last term.
- */
-export function compositeNow(stats: SubjectStat[]): CompositeIndex {
-  const curVals = stats.map((s) => s.curAvg ?? s.overallAvg).filter((v): v is number => v != null);
-  const prevVals = stats.map((s) => s.prevAvg).filter((v): v is number => v != null);
-  const value = curVals.length ? round1(avg(curVals)) : null;
-  const prev = prevVals.length ? round1(avg(prevVals)) : null;
-  return { value, delta: value != null && prev != null ? round1(value - prev) : null };
 }

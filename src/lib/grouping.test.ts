@@ -9,13 +9,22 @@ const entry = (subjectId: string, date: string, score: number, type: GradeEntry[
 describe("buildGroupedRows", () => {
   it("averages per subject per period, sorted by key", () => {
     const rows = buildGroupedRows(
-      [entry("a", "2026-05-01", 70), entry("a", "2026-06-01", 80), entry("a", "2026-02-01", 60), entry("b", "2026-05-10", 90)],
+      [entry("a", "2026-06-01", 70), entry("a", "2026-07-01", 80), entry("a", "2026-03-01", 60), entry("b", "2026-06-10", 90)],
       "term", "all",
     );
     expect(rows.map((r) => r.key)).toEqual(["2026-T1", "2026-T2"]);
     expect(rows[0].a).toBe(60);
     expect(rows[1].a).toBe(75);
     expect(rows[1].b).toBe(90);
+  });
+  it("files a hand-pinned result against the term its owner chose", () => {
+    const rows = buildGroupedRows(
+      [{ ...entry("a", "2026-06-01", 70), term: "2026-T1" }, entry("a", "2026-06-02", 90)],
+      "term", "all",
+    );
+    expect(rows.map((r) => r.key)).toEqual(["2026-T1", "2026-T2"]);
+    expect(rows[0].a).toBe(70);
+    expect(rows[1].a).toBe(90);
   });
   it("filters by assessment type", () => {
     const rows = buildGroupedRows([entry("a", "2026-05-01", 70, "Exam"), entry("a", "2026-05-02", 90, "Quiz")], "term", "Exam");

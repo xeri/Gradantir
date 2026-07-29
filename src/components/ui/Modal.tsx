@@ -1,6 +1,8 @@
-import { useEffect, type ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { C, microLabel } from "../../theme";
+import { useEscapeLayer } from "../../lib/escapeStack";
+import { useDialogFocus } from "./useDialogFocus";
 
 export function Modal({
   title,
@@ -13,18 +15,16 @@ export function Modal({
   children: ReactNode;
   wide?: boolean;
 }) {
-  useEffect(() => {
-    const fn = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", fn);
-    return () => window.removeEventListener("keydown", fn);
-  }, [onClose]);
+  useEscapeLayer(onClose);
+  const panelRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(panelRef);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={title}>
       <div className="absolute inset-0" style={{ background: "rgba(5,7,10,0.75)" }} onClick={onClose} />
       <div
-        className={`gx-fade relative w-full ${wide ? "max-w-lg" : "max-w-md"} border`}
+        ref={panelRef}
+        tabIndex={-1}
+        className={`gx-fade relative w-full ${wide ? "max-w-lg" : "max-w-md"} border outline-none`}
         style={{ background: C.panel, borderColor: C.lineBright, boxShadow: "0 0 0 1px #05070A, 0 24px 64px rgba(0,0,0,0.65)" }}
       >
         <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: C.line }}>

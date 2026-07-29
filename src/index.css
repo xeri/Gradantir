@@ -6,6 +6,7 @@
   --gx-line: #1f2733;
   --gx-amber: #e8a33d;
   --gx-text: #dfe5ec;
+  --gx-dim: #97a1b2;
   color-scheme: dark;
 }
 
@@ -19,32 +20,39 @@ body {
   background: rgba(232, 163, 61, 0.35);
 }
 
-/* Thin, dark, square scrollbars — part of the machine. */
+/* Thin, dark, square scrollbars — part of the machine. #5A6478, not the old
+   #2C3748: a scrollbar is a UI control and WCAG 1.4.11 wants 3:1 against the
+   surface behind it. The old thumb sat at 1.6:1 and vanished into the panel. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #2c3748 transparent;
+  scrollbar-color: #5a6478 transparent;
 }
 *::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 *::-webkit-scrollbar-thumb {
-  background: #2c3748;
+  background: #5a6478;
 }
 *::-webkit-scrollbar-track {
   background: transparent;
 }
 
 /* Ticker tape */
+/* Both custom properties are set from the measured width of one run of quotes
+   (see TickerTape). The -50% fallback is the pre-measurement state, where the
+   belt is exactly two runs. */
 .gx-tape {
-  animation: gx-scroll 42s linear infinite;
+  animation: gx-scroll var(--gx-tape-dur, 42s) linear infinite;
   width: max-content;
 }
 @keyframes gx-scroll {
   from { transform: translateX(0); }
-  to { transform: translateX(-50%); }
+  to { transform: translateX(calc(-1 * var(--gx-tape-span, 50%))); }
 }
-.gx-tape:hover {
+.gx-tape:hover,
+.gx-tape-view:focus .gx-tape,
+.gx-tape-view:focus-within .gx-tape {
   animation-play-state: paused;
 }
 
@@ -70,11 +78,61 @@ body {
   to { opacity: 1; transform: none; }
 }
 
+.gx-spin {
+  animation: gx-spin 0.9s linear infinite;
+}
+@keyframes gx-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* AI IMPORT — the one flashy key on the chrome (§29). Cyan because the AI is
+   a forecaster, and cyan is the forecast/interaction colour; amber stays the
+   machine's own. A breathing glow plus a periodic light sweep; both fall under
+   the global reduced-motion kill below. */
+.gx-wire-btn {
+  position: relative;
+  overflow: hidden;
+  animation: gx-wire-glow 2.6s ease-in-out infinite;
+}
+.gx-wire-btn::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -60%;
+  width: 45%;
+  transform: skewX(-20deg);
+  background: linear-gradient(90deg, transparent, rgba(83, 177, 253, 0.3), transparent);
+  animation: gx-wire-sweep 3.4s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes gx-wire-glow {
+  0%,
+  100% { box-shadow: 0 0 0 0 rgba(83, 177, 253, 0); }
+  50% { box-shadow: 0 0 10px 1px rgba(83, 177, 253, 0.4); }
+}
+@keyframes gx-wire-sweep {
+  0% { left: -60%; }
+  55%,
+  100% { left: 130%; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .gx-tape,
   .gx-cursor,
   .gx-fade {
     animation: none;
+  }
+  /* Naming three animations left every TRANSITION running — the nav tabs, every
+     Btn, the chart legend chips, the aggregate bars, the colour swatches' 1.1×
+     scale. Reduced motion is a request about movement, not about keyframes. */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
@@ -83,12 +141,62 @@ body {
   outline-offset: 1px;
 }
 
+/* ── The derivation layer ──────────────────────────────────────────────
+   KaTeX sets Computer Modern against the terminal on purpose: the machine
+   speaks in mono, the mathematics behind it speaks in a journal face. These
+   rules stop it shouting — dimmed to body weight, sized to the panel, and
+   scrolling inside its own box so a wide equation never widens the popover. */
+.gx-katex .katex {
+  color: var(--gx-dim);
+  font-size: 1.02em;
+}
+.gx-katex-display {
+  display: block;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 2px;
+}
+.gx-katex-display .katex-display {
+  margin: 0;
+  text-align: left;
+}
+.gx-katex-display .katex-display > .katex {
+  text-align: left;
+  white-space: nowrap;
+}
+/* \textcolor emits an inline style, which already beats the dim default above —
+   substituted values stay amber without any rule here. */
+
+/* The trigger: a figure that has mathematics behind it. */
+.gx-derive {
+  cursor: help;
+  border-bottom: 1px dotted transparent;
+  transition: border-color 0.12s ease;
+}
+.gx-derive:hover,
+.gx-derive:focus-visible,
+.gx-derive[data-open="1"],
+body[data-derive="1"] .gx-derive {
+  border-bottom-color: var(--gx-amber);
+}
+.gx-derive:focus-visible {
+  outline: 1px solid var(--gx-amber);
+  outline-offset: 2px;
+}
+
 input[type="number"]::-webkit-inner-spin-button {
   opacity: 1;
 }
 
-/* Recharts leaves a default focus ring box; keep it quiet. */
+/* Recharts leaves a default focus ring box on mouse focus; keep that quiet —
+   but it also sets tabIndex=0 on the wrapper, so blanket `outline: none` on
+   `:focus` removed the ONLY keyboard indicator from every chart on the board. */
 .recharts-wrapper:focus,
 .recharts-surface:focus {
   outline: none;
+}
+.recharts-wrapper:focus-visible,
+.recharts-surface:focus-visible {
+  outline: 1px solid var(--gx-amber);
+  outline-offset: 2px;
 }

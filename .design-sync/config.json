@@ -1,0 +1,58 @@
+{
+  "projectId": "a717a4f6-0776-4406-86e3-009ec646cfb4",
+  "shape": "package",
+  "pkg": "grade-exchange",
+  "globalName": "GradeExchange",
+  "entry": "./.design-sync/ds-entry.ts",
+  "buildCmd": "npm run build && node .design-sync/stage-assets.mjs",
+  "cssEntry": ".design-sync/.cache/dsstyles/styles.css",
+  "readmeHeader": ".design-sync/conventions.md",
+  "docsMap": {
+    "Btn": ".design-sync/groups/controls.md",
+    "Field": ".design-sync/groups/controls.md",
+    "Sel": ".design-sync/groups/controls.md",
+    "Toggle": ".design-sync/groups/controls.md",
+    "Delta": ".design-sync/groups/data.md",
+    "Sparkline": ".design-sync/groups/data.md",
+    "SortHeader": ".design-sync/groups/data.md",
+    "TypeBadge": ".design-sync/groups/data.md",
+    "RatingBadge": ".design-sync/groups/data.md",
+    "RegimeTag": ".design-sync/groups/data.md",
+    "DelistedTag": ".design-sync/groups/data.md",
+    "Panel": ".design-sync/groups/surfaces.md",
+    "Modal": ".design-sync/groups/surfaces.md"
+  },
+  "componentSrcMap": {
+    "Btn": "src/components/ui/Btn.tsx",
+    "Delta": "src/components/ui/Delta.tsx",
+    "Field": "src/components/ui/Field.tsx",
+    "Sel": "src/components/ui/Field.tsx",
+    "Modal": "src/components/ui/Modal.tsx",
+    "Panel": "src/components/ui/Panel.tsx",
+    "SortHeader": "src/components/ui/SortHeader.tsx",
+    "Sparkline": "src/components/ui/Sparkline.tsx",
+    "Toggle": "src/components/ui/Toggle.tsx",
+    "TypeBadge": "src/components/ui/TypeBadge.tsx",
+    "RatingBadge": "src/components/ui/RatingBadge.tsx",
+    "RegimeTag": "src/components/ui/RegimeTag.tsx",
+    "DelistedTag": "src/components/ui/DelistedTag.tsx"
+  },
+  "overrides": {
+    "Modal": { "cardMode": "single", "primaryStory": "LogResult", "viewport": "620x440" }
+  },
+  "dtsPropsFor": {
+    "Btn": "  /** Visual weight: primary = filled amber key, ghost = hairline, danger = red outline. */\n  variant?: \"primary\" | \"ghost\" | \"danger\";\n  children?: React.ReactNode;\n  onClick?: React.MouseEventHandler<HTMLButtonElement>;\n  disabled?: boolean;\n  type?: \"button\" | \"submit\" | \"reset\";\n  title?: string;\n  className?: string;\n  style?: React.CSSProperties;",
+    "Delta": "  /** Signed value; null renders the flat placeholder. */\n  v: number | null;\n  /** Text size of the readout. */\n  size?: \"sm\" | \"lg\";\n  /** Placeholder shown when v is null (default \"—\"). */\n  nullText?: string;",
+    "Field": "  /** Micro-label shown above the control. */\n  label: string;\n  /** The form control this label wraps. */\n  children: React.ReactNode;",
+    "Sel": "  /** Current selected value. */\n  value: string;\n  /** Fired with the new value on change. */\n  onChange: (v: string) => void;\n  /** Selectable options. */\n  options: { value: string; label: string }[];\n  /** Accessible label (the select has no visible <label>). */\n  ariaLabel?: string;\n  className?: string;",
+    "Modal": "  /** Amber header title. */\n  title: string;\n  /** Called on overlay click, close button, or Escape. */\n  onClose: () => void;\n  /** Dialog body. */\n  children: React.ReactNode;\n  /** Widen the dialog (max-w-lg vs the default max-w-md). */\n  wide?: boolean;",
+    "Panel": "  /** Optional amber header-strip label. Omit for a bare bordered panel. */\n  title?: string;\n  /** Content rendered on the right side of the header. */\n  right?: React.ReactNode;\n  /** Panel body. */\n  children: React.ReactNode;\n  /** Pad the body (default true). */\n  pad?: boolean;\n  className?: string;",
+    "SortHeader": "  /** Column label text. */\n  label: string;\n  /** Key this column sorts by. */\n  sortKey: string;\n  /** Current sort state. */\n  sort: { key: string; dir: \"asc\" | \"desc\" };\n  /** Called with the column key when the header is clicked. */\n  onSort: (key: string) => void;\n  /** Text alignment (default \"right\"). */\n  align?: \"left\" | \"right\";",
+    "Sparkline": "  /** Score series; the last 14 are drawn. Needs at least 2 points, else it renders a \"needs 2+ results\" stub. */\n  scores: number[];\n  /** Stroke/fill color (usually the subject color). */\n  color: string;\n  /** SVG width in px (default 132). */\n  w?: number;\n  /** SVG height in px (default 38). */\n  h?: number;\n  /** Optional per-point captions (dates, titles) shown in the hover readout. */\n  labels?: string[];",
+    "Toggle": "  /** On/off state — renders [■] when on, [ ] when off. */\n  on: boolean;\n  /** Toggle handler. */\n  onClick: () => void;\n  /** Label after the checkbox glyph. */\n  children: React.ReactNode;",
+    "TypeBadge": "  /** Assessment type; \"Exam\" gets the filled amber chip, the rest a hairline outline. */\n  type: \"Exam\" | \"Test\" | \"Assignment\" | \"Quiz\";",
+    "RatingBadge": "  /** Sell-side consensus call. Colors ride the gain/loss axis; HOLD stays grey and \"N/A\" recedes to a faint hairline. */\n  rating: \"STRONG BUY\" | \"BUY\" | \"HOLD\" | \"SELL\" | \"STRONG SELL\" | \"N/A\";\n  /** Use the abbreviated label (\"STR BUY\") for the tape and tight table cells. */\n  short?: boolean;\n  /** Chip size (default \"sm\"). */\n  size?: \"sm\" | \"lg\";",
+    "RegimeTag": "  /** Risk regime; PRIME is green, STABLE grey, STRESSED amber, DISTRESSED red. */\n  regime: \"PRIME\" | \"STABLE\" | \"STRESSED\" | \"DISTRESSED\";\n  /** Chip size (default \"sm\"). */\n  size?: \"sm\" | \"lg\";",
+    "DelistedTag": "  /** ISO date the desk closed; when set, the stamp reads \"DELISTED <date>\" and carries a tooltip. */\n  closedAt?: string | null;\n  /** Chip size (default \"sm\"). */\n  size?: \"sm\" | \"lg\";"
+  }
+}

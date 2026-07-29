@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { entriesAvg, neededScore, weightFor, weightedAvg } from "./weights";
-import { DEFAULT_SETTINGS } from "../constants";
+import { DEFAULT_SETTINGS, freshSettings } from "../constants";
 import type { GradeEntry, Settings } from "../types";
 
-const settings: Settings = { weights: { Exam: 3, Test: 2, Assignment: 1.5, Quiz: 1 }, weighted: true };
+const settings: Settings = freshSettings();
 const flat: Settings = { ...settings, weighted: false };
 
 const entry = (score: number, type: GradeEntry["type"]): GradeEntry =>

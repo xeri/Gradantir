@@ -1,4 +1,6 @@
-import { MONTHS } from "../constants";
+/** Month abbreviations live here, not in constants: the calendar sits under
+ *  constants and must not import back through it. */
+export const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 export const uid = () => "id-" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 
@@ -24,6 +26,13 @@ export const iso = (dt: Date): string =>
   `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
 
 export const todayStr = () => iso(new Date());
+
+/** Shift an ISO date by whole days; `n` may be negative. */
+export const addDays = (dateStr: string, n: number): string => {
+  const d = pDate(dateStr);
+  d.setDate(d.getDate() + n);
+  return iso(d);
+};
 
 /** "14 Mar" from a timestamp. */
 export const shortDate = (t: number): string => {

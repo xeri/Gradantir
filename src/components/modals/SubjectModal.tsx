@@ -22,6 +22,7 @@ export function SubjectModal({
   const used = new Set(subjects.map((s) => s.color));
   const [color, setColor] = useState(PALETTE.find((c) => !used.has(c)) || PALETTE[subjects.length % PALETTE.length]);
   const [target, setTarget] = useState("");
+  const [coursework, setCoursework] = useState("");
   const [err, setErr] = useState("");
 
   const handleName = (v: string) => {
@@ -32,7 +33,15 @@ export function SubjectModal({
     if (!name.trim()) { setErr("Give the subject a name."); return; }
     const tk = (ticker.trim() || name.slice(0, 4)).toUpperCase();
     if (subjects.some((s) => s.ticker === tk)) { setErr(`Ticker ${tk} is taken — pick another.`); return; }
-    onSave({ id: uid(), name: name.trim(), ticker: tk, color, target: target === "" ? null : clamp(Number(target), 0, 100) });
+    if (coursework !== "" && (Number.isNaN(Number(coursework)) || Number(coursework) < 0 || Number(coursework) > 100)) {
+      setErr("Coursework share runs from 0 to 100 — or leave it blank.");
+      return;
+    }
+    onSave({
+      id: uid(), name: name.trim(), ticker: tk, color,
+      target: target === "" ? null : clamp(Number(target), 0, 100),
+      courseworkPct: coursework === "" ? null : clamp(Number(coursework), 0, 100),
+    });
   };
 
   return (
@@ -52,11 +61,23 @@ export function SubjectModal({
             <input className={inputCls} style={inputStyle} type="number" min="0" max="100" value={target} onChange={(e) => setTarget(e.target.value)} placeholder="85" />
           </Field>
         </div>
+        <Field label="COURSEWORK % OF FINAL (OPT)">
+          <input className={inputCls} style={inputStyle} type="number" min="0" max="100" value={coursework} onChange={(e) => setCoursework(e.target.value)} placeholder="signal only" />
+          <span className="block mt-1.5 text-[10px] uppercase tracking-wider" style={{ color: C.faint }}>
+            Leave blank if exams decide the grade — coursework still feeds the price.
+          </span>
+        </Field>
         <Field label="LINE COLOR">
-          <div className="flex flex-wrap gap-2">
+          {/* A single-select swatch grid: radiogroup, not a row of buttons, so a
+              screen reader announces the set and which swatch is chosen — the
+              selection was carried only by a border and a scale before. */}
+          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Line color">
             {PALETTE.map((c) => (
               <button
                 key={c}
+                type="button"
+                role="radio"
+                aria-checked={color === c}
                 onClick={() => setColor(c)}
                 aria-label={`Color ${c}`}
                 className="gx-focus w-7 h-7 border-2 transition-transform"

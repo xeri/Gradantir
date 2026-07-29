@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 300" font-family="ui-monospace, 'IBM Plex Mono', monospace">
+  <rect width="900" height="300" fill="#0A0D12"/>
+  <text x="24" y="34" fill="#E8A33D" font-size="13" font-weight="700" letter-spacing="3">KALMAN STEP — ONE PRINT UPDATES THE ABILITY STATE</text>
+
+  <!-- baselines -->
+  <line x1="40" y1="230" x2="280" y2="230" stroke="#1F2733" stroke-width="1"/>
+  <line x1="330" y1="230" x2="570" y2="230" stroke="#1F2733" stroke-width="1"/>
+  <line x1="620" y1="230" x2="860" y2="230" stroke="#1F2733" stroke-width="1"/>
+
+  <!-- 1. prior -->
+  <polyline fill="none" stroke="#97A1B2" stroke-width="2" points="
+    70,228.8 85,225.2 100,215.1 115,194.3 130,163.3 145,132.9 160,120 175,132.9 190,163.3 205,194.3 220,215.1 235,225.2 250,228.8"/>
+  <line x1="160" y1="120" x2="160" y2="230" stroke="#2C3748" stroke-width="1" stroke-dasharray="3 3"/>
+  <text x="70" y="258" fill="#DFE5EC" font-size="12" font-weight="700">1. PRIOR</text>
+  <text x="70" y="276" fill="#5C6779" font-size="11">a ~ N(m, P)</text>
+
+  <!-- arrow 1 -->
+  <line x1="285" y1="170" x2="323" y2="170" stroke="#5C6779" stroke-width="1.5"/>
+  <polygon points="323,170 315,166 315,174" fill="#5C6779"/>
+
+  <!-- 2. predict: flatter, wider -->
+  <polyline fill="none" stroke="#97A1B2" stroke-width="2" stroke-dasharray="5 4" points="
+    324,229.1 345,226.5 366,219.2 387,204 408,181.5 429,159.4 450,150 471,159.4 492,181.5 513,204 534,219.2 555,226.5 576,229.1"/>
+  <line x1="450" y1="150" x2="450" y2="230" stroke="#2C3748" stroke-width="1" stroke-dasharray="3 3"/>
+  <text x="360" y="258" fill="#DFE5EC" font-size="12" font-weight="700">2. PREDICT</text>
+  <text x="360" y="276" fill="#5C6779" font-size="11">P &#8592; P + Q&#183;&#916;t   (drift while no prints land)</text>
+
+  <!-- arrow 2 -->
+  <line x1="575" y1="170" x2="613" y2="170" stroke="#5C6779" stroke-width="1.5"/>
+  <polygon points="613,170 605,166 605,174" fill="#5C6779"/>
+
+  <!-- 3. update: observation + tighter posterior shifted toward it -->
+  <line x1="763" y1="76" x2="763" y2="230" stroke="#53B1FD" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <circle cx="763" cy="76" r="4" fill="#53B1FD"/>
+  <text x="771" y="80" fill="#53B1FD" font-size="11">y (print)</text>
+  <polyline fill="none" stroke="#E8A33D" stroke-width="2.5" points="
+    680,228.6 691,224.3 702,212.4 713,187.8 724,151.2 735,115.3 746,100 757,115.3 768,151.2 779,187.8 790,212.4 801,224.3 812,228.6"/>
+  <line x1="746" y1="100" x2="746" y2="230" stroke="#2C3748" stroke-width="1" stroke-dasharray="3 3"/>
+  <text x="640" y="258" fill="#E8A33D" font-size="12" font-weight="700">3. UPDATE</text>
+  <text x="640" y="276" fill="#5C6779" font-size="11">K = P/(P+R) &#183; m &#8592; m + K(y &#8722; m)</text>
+
+  <text x="24" y="296" fill="#5C6779" font-size="10" letter-spacing="1">R BY TYPE: EXAM 5&#178; &#183; TEST 6.5&#178; &#183; ASSIGNMENT 8&#178; &#183; QUIZ 10&#178;  —  CLEANER PRINTS PULL HARDER</text>
+</svg>

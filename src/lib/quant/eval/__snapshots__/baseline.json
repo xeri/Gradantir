@@ -1,0 +1,11 @@
+{
+  "_comment": "Skill baseline of the gx-1 engine on the committed fixture at 2026-07-21. Regenerated deliberately (never by hand) when a core recalibration ships; the gate fails if per-subject skill regresses. See README §26. Last regen: C4 predictive-dispersion markup (ENSEMBLE_DISPERSION=1.15) — widening the too-tight bands lowers walk-forward CRPS (skill 0.256→0.26) and lifts realized 90% coverage 0.79→0.82; stacks on C1 damped drift.",
+  "modelVersion": "gx-1",
+  "n": 56,
+  "perSubjectSkill": 0.26,
+  "perSubjectMae": 9.06,
+  "perSubjectBias": 1.42,
+  "cover90": 0.82,
+  "meanMae": 6.03,
+  "meanNaiveMae": 4.82
+}

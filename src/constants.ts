@@ -1,12 +1,17 @@
-import type { AssessmentType, Settings } from "./types";
+import { freshCalendar } from "./lib/calendar";
+import type { AssessmentType, DepthSettings, Settings } from "./types";
 
 export const TYPES: AssessmentType[] = ["Exam", "Test", "Assignment", "Quiz"];
 
 export const typePlural = (t: AssessmentType): string => (t === "Quiz" ? "Quizzes" : t + "s");
 
-export const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+export { MONTHS } from "./lib/utils";
 
-export const STORE_KEY = "grade-exchange:v2";
+export const STORE_KEY = "grade-exchange:v3";
+/** Previous store key — read once and silently migrated to v3 on load. */
+export const LEGACY_STORE_KEY = "grade-exchange:v2";
+/** Where a book that would not parse is set aside, so it is never simply lost. */
+export const QUARANTINE_KEY = "grade-exchange:quarantine";
 
 export const DEFAULT_WEIGHTS: Record<AssessmentType, number> = {
   Exam: 3,
@@ -15,10 +20,26 @@ export const DEFAULT_WEIGHTS: Record<AssessmentType, number> = {
   Quiz: 1,
 };
 
-export const DEFAULT_SETTINGS: Settings = {
+/**
+ * Cohort geometry defaults assert nothing about the school: one class per year
+ * level, no streaming. Under them a placement percentile IS the field
+ * percentile, which is the correct reading for an unstreamed school.
+ */
+export const DEFAULT_DEPTH: DepthSettings = {
+  streamsPerLevel: 1,
+  yearSize: null,
+  streamTightness: 0,
+};
+
+/** A deep copy — Settings holds nested objects that must not be shared. */
+export const freshSettings = (): Settings => ({
   weights: { ...DEFAULT_WEIGHTS },
   weighted: true,
-};
+  depth: { ...DEFAULT_DEPTH },
+  calendar: freshCalendar(),
+});
+
+export const DEFAULT_SETTINGS: Settings = freshSettings();
 
 export const GROUPS: { value: string; label: string }[] = [
   { value: "assessment", label: "EACH RESULT" },

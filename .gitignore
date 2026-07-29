@@ -2,3 +2,15 @@ node_modules/
 dist/
 *.local
 .DS_Store
+
+# The real exported transcript is private and never committed. The public repo
+# ships the anonymised src/lib/__fixtures__/book.json instead (same structure,
+# synthetic marks); the tests read that.
+data/
+
+# design-sync (claude.ai/design) — staged scripts, build output, machine state
+.ds-sync/
+ds-bundle/
+.design-sync/.cache/
+.design-sync/learnings/
+.design-sync/node_modules
