@@ -323,6 +323,34 @@ export const AI_POOL_CAP = 0.35;
  */
 export const POOL_CEIL = 0.6;
 
+/* ── Life-signals channel credibility ────────────────────────────────── */
+
+/**
+ * Pseudo-rounds shrinking the signal channel's earned weight toward zero.
+ * Mirrors READINESS_KAPPA: exam rounds are the only thing that can price this
+ * channel's track record, and they are scarce, so the shrinkage is the same
+ * size as the other state channel's.
+ */
+export const SIGNAL_KAPPA = 2;
+
+/**
+ * The most the signal adjustment can ever weigh. A self-logged state — sleep,
+ * disruption, session quality — earns a smaller seat than the self-forecast
+ * channel (SELF_POOL_CAP = 0.45): it is evidence about CONDITIONS, not a call
+ * on the outcome, so it is capped further under the desk's own ceiling.
+ */
+export const SIGNAL_CAP = 0.35;
+
+/**
+ * What the signal channel is worth before a single round has scored it. Like
+ * READINESS_PRIOR, a state channel is charged the moment data exists — the
+ * engine already prices a difficulty tag or a reliability tag with no track
+ * record behind it — but lower than READINESS_PRIOR, because signals make a
+ * LEVEL claim on the forecast (a points adjustment) that readiness, a pure
+ * tilt across the cross-section, never does.
+ */
+export const SIGNAL_PRIOR = 0.3;
+
 /* ── Market depth ──────────────────────────────────────────────────── */
 
 /**
