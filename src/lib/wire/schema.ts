@@ -1,7 +1,8 @@
 import { TYPES } from "../../constants";
-import { RELIABILITY_TAGS } from "../io";
+import { DISRUPTION_KINDS, ERROR_KINDS, RELIABILITY_TAGS, SESSION_KINDS } from "../io";
 import type {
-  AiPrediction, Allocation, Duel, GradeEntry, MeanCall, SelfPrediction, Subject, Upcoming,
+  AiPrediction, Allocation, Disruption, Duel, GradeEntry, MeanCall, RestLog, SelfPrediction,
+  StudySession, Subject, Topic, TopicMark, Upcoming,
 } from "../../types";
 
 /**
@@ -38,7 +39,8 @@ export interface FieldSpec {
 }
 
 export type WireSectionKey =
-  | "subjects" | "entries" | "upcoming" | "allocations" | "duels" | "meanCalls";
+  | "subjects" | "entries" | "upcoming" | "allocations" | "duels" | "meanCalls"
+  | "topics" | "topicMarks" | "sessions" | "rest" | "disruptions";
 
 export interface SectionSpec {
   key: WireSectionKey;
@@ -63,6 +65,9 @@ export interface SectionSpec {
 }
 
 const RELIABILITY_LIST = [...RELIABILITY_TAGS].join(" | ");
+const SESSION_KIND_LIST = [...SESSION_KINDS].map((k) => `"${k}"`).join(" | ");
+const ERROR_KIND_LIST = [...ERROR_KINDS].map((k) => `"${k}"`).join(" | ");
+const DISRUPTION_KIND_LIST = [...DISRUPTION_KINDS].map((k) => `"${k}"`).join(" | ");
 
 export const SUBJECT_FIELDS = {
   id: {
@@ -116,10 +121,12 @@ export const SUBJECT_FIELDS = {
   belief: {
     label: "self-rated standing",
     constraint: "integer 1–5 or null — the STUDENT'S OWN confidence in their current standing. Transcribe-only.",
+    hint: "Ask directly, subject by subject: 'how do you feel you're doing right now, 1 (worst) to 5 (best)?' — no document states this, only the student can.",
   },
   attendancePct: {
     label: "attendance",
     constraint: "number 0–100 or null — this subject's attendance rate, as reported.",
+    hint: "School portals and attendance reports sometimes state a per-subject or overall rate; ask the student directly when nothing is documented.",
   },
 } satisfies Record<keyof Subject, FieldSpec>;
 
@@ -284,6 +291,94 @@ export const MEAN_CALL_FIELDS = {
   createdAt: { label: "filed", required: true, constraint: 'ISO "YYYY-MM-DD" — today, unless documented otherwise.' },
 } satisfies Record<keyof MeanCall, FieldSpec>;
 
+export const TOPIC_FIELDS = {
+  id: {
+    label: "topic id", required: true,
+    constraint: 'deterministic: "t-<ticker-lowercase>-<slug>" from the topic name. Same topic ⇒ same id, so re-pasting a syllabus never duplicates it.',
+    example: "t-math-quadratics",
+  },
+  subjectId: { label: "subject id", required: true, constraint: "must be an id present in this payload's `subjects` — an unknown id drops the row." },
+  name: { label: "name", required: true, constraint: "non-empty string — the syllabus topic's name, as the syllabus prints it." },
+  weightPct: {
+    label: "syllabus share",
+    constraint: "number 0–100 or omit — this topic's share of the ASSESSED syllabus. Omit for equal weighting across the subject's topics.",
+    hint: "Assessment matrices and syllabus documents often state a weighting per strand/topic.",
+  },
+  prereqIds: {
+    label: "prerequisites",
+    constraint: "array of topic ids, SAME subject only, or omit — topics this one depends on. Filtered to the subject's own topics on import; a self-reference is dropped.",
+    hint: "A syllabus laid out in strands/units often states an explicit sequence ('Topic 3 builds on Topic 1').",
+  },
+} satisfies Record<keyof Topic, FieldSpec>;
+
+export const TOPIC_MARK_FIELDS = {
+  id: {
+    label: "topic-mark id", required: true,
+    constraint: 'deterministic: "tm-<entryId>-<topicId>" — the EXACT ids of the entry and topic this row breaks down. Same paper, same topic ⇒ same id.',
+    example: "tm-e-math-2026-05-14-midyear-t-math-quadratics",
+  },
+  entryId: {
+    label: "entry id", required: true,
+    constraint: "must be an id present in this payload's (or the book's) `entries` — the RESULT this breakdown belongs to. An entry not already on the tape drops the row: a mark is never evidence for a paper the book cannot show.",
+  },
+  topicId: {
+    label: "topic id", required: true,
+    constraint: "must be an id present in this payload's (or the book's) `topics`, AND that topic's subject must match the entry's subject — a mismatch drops the row (the dual foreign key).",
+  },
+  scorePct: {
+    label: "score on this topic %", required: true,
+    constraint: "number 0–100 — this topic's share of the marks on THAT paper (earned/available × 100), not the paper's overall score.",
+  },
+  maxMarks: {
+    label: "marks available",
+    constraint: "number >0 or omit — how many raw marks this topic was worth on the paper.",
+    hint: "Per-question mark schemes on a returned paper: 'Q3 (Quadratics): 6/8'.",
+  },
+  errorKind: {
+    label: "error kind",
+    constraint: `one of ${ERROR_KIND_LIST} or omit — the marker's or the student's OWN diagnosis of why marks were lost, when stated. Never guess one.`,
+  },
+} satisfies Record<keyof TopicMark, FieldSpec>;
+
+export const SESSION_FIELDS = {
+  id: {
+    label: "session id", required: true,
+    constraint: 'deterministic: "ss-<ticker-lowercase>-<date>-<n>", n counting same-subject same-day sessions from 0. Same block ⇒ same id.',
+    example: "ss-math-2026-05-10-0",
+  },
+  subjectId: { label: "subject id", required: true, constraint: "must be an id present in this payload's `subjects`." },
+  date: { label: "date", required: true, constraint: 'ISO "YYYY-MM-DD" — the day the block was studied.' },
+  minutes: { label: "minutes", required: true, constraint: "integer 1–600 — the length of the block." },
+  kind: { label: "kind", required: true, constraint: `exactly one of ${SESSION_KIND_LIST}.` },
+  topicIds: {
+    label: "topics covered",
+    constraint: "array of topic ids, SAME subject only, or omit — which topics the block covered, only when the student can say.",
+  },
+} satisfies Record<keyof StudySession, FieldSpec>;
+
+export const REST_FIELDS = {
+  id: {
+    label: "rest id", required: true,
+    constraint: '"r-<date>" — one row per night; a later row for the SAME date REPLACES the earlier one, so re-pasting a fuller export just overwrites the same night rather than duplicating it.',
+    example: "r-2026-05-13",
+  },
+  date: { label: "date", required: true, constraint: 'ISO "YYYY-MM-DD" — the NIGHT this reading is FOR, not the morning it was logged.' },
+  hours: { label: "hours slept", required: true, constraint: "number 0–14 — total sleep that night." },
+  bedtime: { label: "bedtime", constraint: '"HH:MM", 24-hour clock, or omit — as the sleep export states it.' },
+} satisfies Record<keyof RestLog, FieldSpec>;
+
+export const DISRUPTION_FIELDS = {
+  id: {
+    label: "disruption id", required: true,
+    constraint: '"d-<date>-<kind>" — the day it started and its kind.',
+    example: "d-2026-04-20-illness",
+  },
+  date: { label: "date", required: true, constraint: 'ISO "YYYY-MM-DD" — the day the disruption STARTED.' },
+  days: { label: "days", constraint: "integer 1–60 or omit — how many days it ran, from `date`." },
+  kind: { label: "kind", required: true, constraint: `exactly one of ${DISRUPTION_KIND_LIST}.` },
+  note: { label: "note", constraint: "≤160 chars or omit — a short reason, in the student's own words." },
+} satisfies Record<keyof Disruption, FieldSpec>;
+
 export const WIRE_SECTIONS: SectionSpec[] = [
   {
     key: "subjects",
@@ -336,6 +431,51 @@ export const WIRE_SECTIONS: SectionSpec[] = [
     elicitation: true,
     transcribeNote: "TRANSCRIBE-ONLY — see R7",
     fields: MEAN_CALL_FIELDS,
+  },
+  {
+    key: "topics",
+    title: "topics[] — the syllabus map",
+    blurb: "One row per syllabus topic within a subject — the unit study, marks and mastery are tracked against, finer than the subject itself. A subject's own shape (traits/mix) is set on the subject row, not here; this section is the per-topic breakdown.",
+    idConvention: "t-<ticker>-<slug>",
+    elicitation: false,
+    transcribeNote: "transcribe the syllabus; never invent a topic it doesn't assess",
+    fields: TOPIC_FIELDS,
+  },
+  {
+    key: "topicMarks",
+    title: "topicMarks[] — per-topic breakdowns",
+    blurb: "One row per syllabus topic a marked, returned paper breaks a result into — how a paper's marks split across topics, and why marks were lost when known (the per-question-marks recipe is spelled out further down, where documents are the source).",
+    idConvention: "tm-<entryId>-<topicId>",
+    elicitation: false,
+    transcribeNote: "transcribe the marked paper; never invent a mark",
+    fields: TOPIC_MARK_FIELDS,
+  },
+  {
+    key: "sessions",
+    title: "sessions[] — logged study blocks",
+    blurb: "One row per block of study time the student actually put in — length, kind, and which topics it covered when known.",
+    idConvention: "ss-<ticker>-<date>-<n>",
+    elicitation: false,
+    transcribeNote: "transcribe the study log; never invent a session",
+    fields: SESSION_FIELDS,
+  },
+  {
+    key: "rest",
+    title: "rest[] — logged sleep",
+    blurb: "One row per night's sleep, from a sleep app export or the student's own memory (the export-parsing recipe is spelled out further down, where documents are the source).",
+    idConvention: "r-<date>",
+    elicitation: false,
+    transcribeNote: "transcribe the sleep export; never invent a night",
+    fields: REST_FIELDS,
+  },
+  {
+    key: "disruptions",
+    title: "disruptions[] — routine breaks",
+    blurb: "One row per stretch of days that took the student off their normal routine — illness, family, a big event.",
+    idConvention: "d-<date>-<kind>",
+    elicitation: false,
+    transcribeNote: "transcribe what actually happened; never invent a disruption",
+    fields: DISRUPTION_FIELDS,
   },
 ];
 

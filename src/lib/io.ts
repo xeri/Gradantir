@@ -824,6 +824,23 @@ export function mergeData(current: AppData, payload: ImportPayload): AppData {
   // their two references moved. Either one changing means the row now
   // describes the re-listed desk's data, so it gets a fresh id too, the same
   // as an entry or a topic would.
+  //
+  // DUAL-FK INVARIANT ACROSS THE REMAP, PROVEN RATHER THAN RE-CHECKED HERE:
+  // `sanitizeTopicMark` already guarantees every incoming `m` has an entryId
+  // and a topicId whose subjects AGREE (both resolve to the same subjectId
+  // within `payload`) — that is the whole point of the dual foreign key. A
+  // desk's id is only added to `entryRemap`/`topicRemap` when that desk's OWN
+  // id is in `remap` (a same-id-different-desk collision); since the entry's
+  // subject and the topic's subject are the SAME subjectId for any row that
+  // reached this loop, `entryRemap.get(m.entryId)` and `topicRemap.get(m.topicId)`
+  // are defined together or absent together — never one without the other.
+  // So a topicMark can never end up with one reference remapped (now pointing
+  // at the re-listed desk) and the other left on the original: the wire's
+  // deterministic `tm-<entryId>-<topicId>` id makes topic ids collide-proof
+  // across DIFFERENT subjects (the subject is baked into the topic's own
+  // `t-<ticker>-<slug>` id), and the remap logic above makes them collide-
+  // proof across a re-listed SAME subject too — the FK agreement this row
+  // was sanitized against survives the merge unchanged.
   const topicMarkMap = new Map((current.topicMarks ?? []).map((m) => [m.id, m]));
   for (const m of payload.topicMarks) {
     const newEntryId = entryRemap.get(m.entryId);

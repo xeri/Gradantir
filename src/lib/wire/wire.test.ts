@@ -21,7 +21,12 @@ const TODAY = "2026-07-27";
 
 const book: AppData = {
   subjects: [
-    { id: "s-math", name: "Mathematics", ticker: "MATH", color: "#123456", target: 85, courseworkPct: 40 },
+    {
+      id: "s-math", name: "Mathematics", ticker: "MATH", color: "#123456", target: 85, courseworkPct: 40,
+      traits: { cumulativeness: 0.8, determinism: 0.6, breadth: 0.4 },
+      mix: { knowledge: 0.3, procedure: 0.4, skill: 0.3 },
+      belief: 4, attendancePct: 97,
+    },
     { id: "s-eng", name: "English", ticker: "ENG", color: "#E0662E", target: null, courseworkPct: null, formerly: "s-lit" },
     { id: "s-lit", name: "English Literature", ticker: "LIT", color: "#AA33CC", target: null, courseworkPct: null, archived: true },
   ],
@@ -55,6 +60,22 @@ describe("the golden example", () => {
   });
   it("stamps the current prompt version", () => {
     expect(EXAMPLE_PAYLOAD.promptVersion).toBe(PROMPT_VERSION);
+  });
+  it("bumps PROMPT_VERSION for T2's subject/upcoming fields plus the five life-signal sections", () => {
+    expect(PROMPT_VERSION).toBe(2);
+  });
+  it("pushes the five new life-signal sections through the REAL import pipeline with zero rows lost", () => {
+    const res = parseImport(JSON.stringify(EXAMPLE_PAYLOAD));
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.payload.topics).toHaveLength(EXAMPLE_PAYLOAD.data.topics.length);
+    expect(res.payload.topicMarks).toHaveLength(EXAMPLE_PAYLOAD.data.topicMarks.length);
+    expect(res.payload.sessions).toHaveLength(EXAMPLE_PAYLOAD.data.sessions.length);
+    expect(res.payload.rest).toHaveLength(EXAMPLE_PAYLOAD.data.rest.length);
+    expect(res.payload.disruptions).toHaveLength(EXAMPLE_PAYLOAD.data.disruptions.length);
+    // The dual-FK topicMark survives with both references intact.
+    expect(res.payload.topicMarks[0].entryId).toBe(EXAMPLE_PAYLOAD.data.entries[0].id);
+    expect(res.payload.topicMarks[0].topicId).toBe(EXAMPLE_PAYLOAD.data.topics[0].id);
   });
 });
 
@@ -121,6 +142,13 @@ describe("the roster echo and the wording a weak model would obey", () => {
     expect(prompt).toContain('"archived":true');
   });
 
+  it("echoes traits, mix, belief and attendancePct when the desk has them set", () => {
+    expect(prompt).toContain('"traits":{"cumulativeness":0.8,"determinism":0.6,"breadth":0.4}');
+    expect(prompt).toContain('"mix":{"knowledge":0.3,"procedure":0.4,"skill":0.3}');
+    expect(prompt).toContain('"belief":4');
+    expect(prompt).toContain('"attendancePct":97');
+  });
+
   it("orders a full echo and never says 'never re-list them'", () => {
     expect(prompt).not.toContain("never re-list them");
     expect(prompt).toContain("echo these ids exactly");
@@ -146,6 +174,15 @@ describe("the roster echo and the wording a weak model would obey", () => {
     expect(interviewOnly).toContain("meanCalls row");
   });
 
+  it("interviews for the life-signal sections too — sessions, rest, disruptions, belief, attendance", () => {
+    const interviewOnly = buildWirePrompt({ ...ALL, sources: { documents: false, interview: true } }, book, TODAY);
+    expect(interviewOnly).toContain("⇒ sessions");
+    expect(interviewOnly).toContain("⇒ rest");
+    expect(interviewOnly).toContain("⇒ disruptions");
+    expect(interviewOnly).toContain("belief");
+    expect(interviewOnly).toContain("attendance");
+  });
+
   it("invites reasoning before the payload message, never inside it", () => {
     expect(prompt).toContain("BEFORE your final payload message");
   });
@@ -153,6 +190,54 @@ describe("the roster echo and the wording a weak model would obey", () => {
   it("drops the forecast-module reference from the blurbs when the module is off", () => {
     const off = buildWirePrompt({ ...ALL, forecasts: false }, book, TODAY);
     expect(off).not.toContain("when the forecast module is on");
+  });
+});
+
+describe("the five life-signal sections", () => {
+  it("registers a SectionSpec with a deterministic id recipe for each", () => {
+    const byKey = new Map(WIRE_SECTIONS.map((s) => [s.key, s]));
+    expect(byKey.get("topics")?.idConvention).toContain("t-");
+    expect(byKey.get("topicMarks")?.idConvention).toBe("tm-<entryId>-<topicId>");
+    expect(byKey.get("sessions")?.idConvention).toContain("ss-");
+    expect(byKey.get("rest")?.idConvention).toBe("r-<date>");
+    expect(byKey.get("disruptions")?.idConvention).toBe("d-<date>-<kind>");
+  });
+
+  it("carries a transcribe note per section, none invented", () => {
+    for (const key of ["topics", "topicMarks", "sessions", "rest", "disruptions"] as const) {
+      const spec = WIRE_SECTIONS.find((s) => s.key === key)!;
+      expect(spec.transcribeNote, key).toBeTruthy();
+      expect(spec.transcribeNote, key).toMatch(/transcribe/i);
+    }
+  });
+
+  it("none of the five are flagged as scoring the student's own forecasting skill", () => {
+    for (const key of ["topics", "topicMarks", "sessions", "rest", "disruptions"] as const) {
+      expect(WIRE_SECTIONS.find((s) => s.key === key)!.elicitation, key).toBe(false);
+    }
+  });
+
+  it("renders the three new guidance blocks when documents are a source", () => {
+    const prompt = buildWirePrompt(ALL, book, TODAY);
+    expect(prompt).toContain("PARSING A MARKED PAPER");
+    expect(prompt).toContain("PARSING A SLEEP EXPORT");
+    expect(prompt).toContain("ASSIGNING SUBJECT TRAITS");
+  });
+
+  it("omits the document-mining guidance blocks when documents are not a source", () => {
+    const interviewOnly = buildWirePrompt({ ...ALL, sources: { documents: false, interview: true } }, book, TODAY);
+    expect(interviewOnly).not.toContain("PARSING A MARKED PAPER");
+    expect(interviewOnly).not.toContain("PARSING A SLEEP EXPORT");
+    expect(interviewOnly).not.toContain("ASSIGNING SUBJECT TRAITS");
+  });
+
+  it("the output contract lists all eleven data sections", () => {
+    const prompt = buildWirePrompt(ALL, book, TODAY);
+    expect(prompt).toContain('"topics"');
+    expect(prompt).toContain('"topicMarks"');
+    expect(prompt).toContain('"sessions"');
+    expect(prompt).toContain('"rest"');
+    expect(prompt).toContain('"disruptions"');
   });
 });
 
@@ -215,6 +300,15 @@ describe("parseWire", () => {
     if (!res.ok) return;
     expect(res.meta.warnings).toEqual([]);
     expect(res.meta.questions).toEqual([]);
+  });
+  it("carries raw counts for the five life-signal sections", () => {
+    const res = parseWire(reply());
+    if (!res.ok) throw new Error("fixture failed");
+    expect(res.raw.topics.length).toBeGreaterThan(0);
+    expect(res.raw.topicMarks.length).toBeGreaterThan(0);
+    expect(res.raw.sessions.length).toBeGreaterThan(0);
+    expect(res.raw.rest.length).toBeGreaterThan(0);
+    expect(res.raw.disruptions.length).toBeGreaterThan(0);
   });
 });
 
@@ -283,6 +377,11 @@ describe("reviewWire", () => {
     expect(math.color).toBe("#123456");
     expect(math.target).toBe(85);
     expect(math.courseworkPct).toBe(40);
+    // A stripped echo must not wipe the shape priors/self-ratings T2 added either.
+    expect(math.traits).toEqual({ cumulativeness: 0.8, determinism: 0.6, breadth: 0.4 });
+    expect(math.mix).toEqual({ knowledge: 0.3, procedure: 0.4, skill: 0.3 });
+    expect(math.belief).toBe(4);
+    expect(math.attendancePct).toBe(97);
     expect(fixed.subjects.find((s) => s.id === "s-eng")?.formerly).toBe("s-lit");
     expect(fixed.subjects.find((s) => s.id === "s-lit")?.archived).toBe(true);
     // A genuinely new desk passes through untouched.
@@ -290,11 +389,13 @@ describe("reviewWire", () => {
 
     // An explicit incoming value still wins over the book's.
     const explicit = rehydrateSubjects(
-      parseEcho([{ id: "s-math", name: "Mathematics", ticker: "MATH", target: 90, courseworkPct: 55 }]),
+      parseEcho([{ id: "s-math", name: "Mathematics", ticker: "MATH", target: 90, courseworkPct: 55, belief: 2, attendancePct: 80 }]),
       book,
     ).subjects[0];
     expect(explicit.target).toBe(90);
     expect(explicit.courseworkPct).toBe(55);
+    expect(explicit.belief).toBe(2);
+    expect(explicit.attendancePct).toBe(80);
 
     // An id collision that is a DIFFERENT desk gets nothing grafted on.
     const clash = rehydrateSubjects(
@@ -331,5 +432,73 @@ describe("reviewWire", () => {
     // With forecasts allowed the wire call rides through untouched.
     const kept = filterPayload(res.payload, {}, true);
     expect(kept.upcoming[0].aiPred?.point).toBe(77);
+  });
+
+  it("filterPayload strips the five life-signal sections too (T2 minor: they used to ride past the review gate unconditionally)", () => {
+    const res = parseWire(JSON.stringify(EXAMPLE_PAYLOAD));
+    if (!res.ok) throw new Error("fixture failed");
+    const filtered = filterPayload(
+      res.payload,
+      { topics: false, topicMarks: false, sessions: false, rest: false, disruptions: false },
+      false,
+    );
+    expect(filtered.topics).toEqual([]);
+    expect(filtered.topicMarks).toEqual([]);
+    expect(filtered.sessions).toEqual([]);
+    expect(filtered.rest).toEqual([]);
+    expect(filtered.disruptions).toEqual([]);
+    // Untouched when not excluded.
+    const kept = filterPayload(res.payload, {}, false);
+    expect(kept.topics.length).toBeGreaterThan(0);
+    expect(kept.topicMarks.length).toBeGreaterThan(0);
+    expect(kept.sessions.length).toBeGreaterThan(0);
+    expect(kept.rest.length).toBeGreaterThan(0);
+    expect(kept.disruptions.length).toBeGreaterThan(0);
+  });
+
+  it("reviewWire covers the five life-signal sections — found/kept/added", () => {
+    const res = parseWire(JSON.stringify(EXAMPLE_PAYLOAD));
+    if (!res.ok) throw new Error("fixture failed");
+    const review = reviewWire(res, current);
+    for (const key of ["topics", "topicMarks", "sessions", "rest", "disruptions"] as const) {
+      const s = review.sections.find((sec) => sec.key === key)!;
+      expect(s.found, key).toBeGreaterThan(0);
+      expect(s.kept, key).toBe(s.found);
+      expect(s.added, key).toBe(s.kept);
+      expect(s.dropped, key).toBe(0);
+    }
+  });
+
+  it("lintRow explains casualties in the five life-signal sections", () => {
+    const dirty = {
+      ...EXAMPLE_PAYLOAD,
+      data: {
+        ...EXAMPLE_PAYLOAD.data,
+        topicMarks: [
+          ...EXAMPLE_PAYLOAD.data.topicMarks,
+          { id: "tm-bad", entryId: "e-ghost", topicId: "t-ghost", scorePct: 50 },
+        ],
+        rest: [
+          ...EXAMPLE_PAYLOAD.data.rest,
+          { id: "r-bad", date: "not-a-date", hours: 7 },
+        ],
+        disruptions: [
+          ...EXAMPLE_PAYLOAD.data.disruptions,
+          { id: "d-bad", date: "2026-04-01", kind: "made-up-kind" },
+        ],
+      },
+    };
+    const res = parseWire(JSON.stringify(dirty));
+    if (!res.ok) throw new Error("fixture failed");
+    const review = reviewWire(res, current);
+    const topicMarks = review.sections.find((s) => s.key === "topicMarks")!;
+    expect(topicMarks.dropped).toBe(1);
+    expect(topicMarks.reasons.join(" | ")).toContain("e-ghost");
+    const rest = review.sections.find((s) => s.key === "rest")!;
+    expect(rest.dropped).toBe(1);
+    expect(rest.reasons.join(" | ")).toContain("not YYYY-MM-DD");
+    const disruptions = review.sections.find((s) => s.key === "disruptions")!;
+    expect(disruptions.dropped).toBe(1);
+    expect(disruptions.reasons.join(" | ")).toContain("made-up-kind");
   });
 });

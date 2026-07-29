@@ -1,5 +1,5 @@
 import { TYPES } from "../../constants";
-import { ISO_DATE, TERM_KEY, sameDesk, type ImportPayload } from "../io";
+import { DISRUPTION_KINDS, ISO_DATE, SESSION_KINDS, TERM_KEY, sameDesk, type ImportPayload } from "../io";
 import { WIRE_SECTIONS, type WireSectionKey } from "./schema";
 import type { WireRaw } from "./parse";
 import type { AppData } from "../../types";
@@ -47,12 +47,22 @@ const MAX_REASONS = 5;
 const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null;
 const finite = (v: unknown): v is number => typeof v === "number" && isFinite(v);
 
+/** Best-effort cross-reference context, built once from the raw payload's own rows. */
+interface LintCtx {
+  subjectIds: Set<string>;
+  /** raw entry id -> its declared (unvalidated) subjectId. */
+  entrySubjectOf: Map<string, string>;
+  /** raw topic id -> its declared (unvalidated) subjectId. */
+  topicSubjectOf: Map<string, string>;
+}
+
 /** One cheap, human-readable defect per raw row — the first that applies. */
-function lintRow(key: WireSectionKey, raw: unknown, i: number, subjectIds: Set<string>): string | null {
+function lintRow(key: WireSectionKey, raw: unknown, i: number, ctx: LintCtx): string | null {
   const at = `${key}[${i}]`;
   if (!isRecord(raw)) return `${at}: not an object`;
   const id = raw.id;
   const sid = raw.subjectId;
+  const { subjectIds } = ctx;
   switch (key) {
     case "subjects":
       if (typeof id !== "string" || !id) return `${at}: missing id`;
@@ -87,6 +97,40 @@ function lintRow(key: WireSectionKey, raw: unknown, i: number, subjectIds: Set<s
       if (typeof raw.roundKey !== "string" || !TERM_KEY.test(raw.roundKey)) return `${at}: roundKey is not YYYY-T1..T4`;
       if (!finite(raw.predAvg)) return `${at}: predAvg is not a number`;
       return null;
+    case "topics":
+      if (typeof id !== "string" || !id) return `${at}: missing id`;
+      if (typeof sid !== "string" || !sid) return `${at}: missing subjectId`;
+      if (!subjectIds.has(sid)) return `${at}: subjectId "${sid}" is not in the payload's subjects`;
+      if (typeof raw.name !== "string" || !raw.name.trim()) return `${at}: missing name`;
+      return null;
+    case "topicMarks": {
+      if (typeof id !== "string" || !id) return `${at}: missing id`;
+      const entryId = raw.entryId;
+      const topicId = raw.topicId;
+      if (typeof entryId !== "string" || !ctx.entrySubjectOf.has(entryId)) return `${at}: entryId "${String(entryId)}" is not in the payload's entries`;
+      if (typeof topicId !== "string" || !ctx.topicSubjectOf.has(topicId)) return `${at}: topicId "${String(topicId)}" is not in the payload's topics`;
+      if (ctx.entrySubjectOf.get(entryId) !== ctx.topicSubjectOf.get(topicId)) return `${at}: the entry and the topic disagree on subject`;
+      if (!finite(raw.scorePct)) return `${at}: scorePct is not a number`;
+      return null;
+    }
+    case "sessions":
+      if (typeof id !== "string" || !id) return `${at}: missing id`;
+      if (typeof sid !== "string" || !sid) return `${at}: missing subjectId`;
+      if (!subjectIds.has(sid)) return `${at}: subjectId "${sid}" is not in the payload's subjects`;
+      if (typeof raw.date !== "string" || !ISO_DATE.test(raw.date)) return `${at}: date "${String(raw.date)}" is not YYYY-MM-DD`;
+      if (!finite(raw.minutes)) return `${at}: minutes is not a number`;
+      if (typeof raw.kind !== "string" || !SESSION_KINDS.has(raw.kind)) return `${at}: kind "${String(raw.kind)}" is not one of ${[...SESSION_KINDS].join("/")}`;
+      return null;
+    case "rest":
+      if (typeof id !== "string" || !id) return `${at}: missing id`;
+      if (typeof raw.date !== "string" || !ISO_DATE.test(raw.date)) return `${at}: date "${String(raw.date)}" is not YYYY-MM-DD`;
+      if (!finite(raw.hours)) return `${at}: hours is not a number`;
+      return null;
+    case "disruptions":
+      if (typeof id !== "string" || !id) return `${at}: missing id`;
+      if (typeof raw.date !== "string" || !ISO_DATE.test(raw.date)) return `${at}: date "${String(raw.date)}" is not YYYY-MM-DD`;
+      if (typeof raw.kind !== "string" || !DISRUPTION_KINDS.has(raw.kind)) return `${at}: kind "${String(raw.kind)}" is not one of ${[...DISRUPTION_KINDS].join("/")}`;
+      return null;
   }
 }
 
@@ -102,12 +146,29 @@ export function reviewWire(
     allocations: new Set((current.allocations ?? []).map((a) => a.id)),
     duels: new Set((current.duels ?? []).map((d) => d.id)),
     meanCalls: new Set((current.meanCalls ?? []).map((m) => m.id)),
+    topics: new Set((current.topics ?? []).map((t) => t.id)),
+    topicMarks: new Set((current.topicMarks ?? []).map((m) => m.id)),
+    sessions: new Set((current.sessions ?? []).map((s) => s.id)),
+    rest: new Set((current.rest ?? []).map((r) => r.id)),
+    disruptions: new Set((current.disruptions ?? []).map((d) => d.id)),
   };
   // Lint resolves subject refs against the RAW payload's own subject ids —
   // the sanitizer's rule ("your entries only reference your subjects").
   const rawSubjectIds = new Set(
     raw.subjects.filter(isRecord).map((s) => s.id).filter((id): id is string => typeof id === "string"),
   );
+  // topicMarks lint needs the dual FK resolved against the RAW payload's own
+  // entries/topics too — best-effort, display only (the sanitizer is the
+  // real gate); a raw row with a non-string id is simply invisible to it.
+  const rawEntrySubjectOf = new Map<string, string>();
+  for (const e of raw.entries) {
+    if (isRecord(e) && typeof e.id === "string" && typeof e.subjectId === "string") rawEntrySubjectOf.set(e.id, e.subjectId);
+  }
+  const rawTopicSubjectOf = new Map<string, string>();
+  for (const t of raw.topics) {
+    if (isRecord(t) && typeof t.id === "string" && typeof t.subjectId === "string") rawTopicSubjectOf.set(t.id, t.subjectId);
+  }
+  const lintCtx: LintCtx = { subjectIds: rawSubjectIds, entrySubjectOf: rawEntrySubjectOf, topicSubjectOf: rawTopicSubjectOf };
 
   const sections = WIRE_SECTIONS.map((spec): SectionReview => {
     const rawRows = raw[spec.key];
@@ -122,7 +183,7 @@ export function reviewWire(
         const row = rawRows[i];
         // A raw row whose id survived was kept — its defects were repaired.
         if (isRecord(row) && typeof row.id === "string" && keptIds.has(row.id)) continue;
-        const reason = lintRow(spec.key, row, i, rawSubjectIds);
+        const reason = lintRow(spec.key, row, i, lintCtx);
         if (reason) reasons.push(reason);
       }
       if (!reasons.length) reasons.push(`${spec.key}: ${dropped} row${dropped === 1 ? "" : "s"} failed validation`);
@@ -160,11 +221,14 @@ export function reviewWire(
  * "the model said null" from "the model dropped the key" — and `mergeData`
  * replaces subject rows wholesale, so a stripped echo would cost the book its
  * colors, coursework splits and `formerly` lineage (the doubled-denominator
- * shape io.ts warns about). For every incoming subject that IS a desk the
- * book already holds, keep the book's color outright (an intake never
- * recolors a desk) and fall back to the book's value wherever the echo is
- * null or silent. Explicit incoming values still win; an id collision that is
- * a different desk passes through untouched for `mergeData` to re-list.
+ * shape io.ts warns about) — and, since T2, its shape priors (`traits`,
+ * `mix`) and self-ratings (`belief`, `attendancePct`) too: those are set once
+ * and rarely revisited, so losing one to a stripped echo would go unnoticed
+ * for a term. For every incoming subject that IS a desk the book already
+ * holds, keep the book's color outright (an intake never recolors a desk)
+ * and fall back to the book's value wherever the echo is null or silent.
+ * Explicit incoming values still win; an id collision that is a different
+ * desk passes through untouched for `mergeData` to re-list.
  */
 export function rehydrateSubjects(payload: ImportPayload, current: AppData): ImportPayload {
   const held = new Map(current.subjects.map((s) => [s.id, s]));
@@ -174,6 +238,10 @@ export function rehydrateSubjects(payload: ImportPayload, current: AppData): Imp
       const cur = held.get(s.id);
       if (!cur || !sameDesk(cur, s)) return s;
       const formerly = s.formerly ?? cur.formerly;
+      const traits = s.traits ?? cur.traits;
+      const mix = s.mix ?? cur.mix;
+      const belief = s.belief ?? cur.belief;
+      const attendancePct = s.attendancePct ?? cur.attendancePct;
       return {
         ...s,
         color: cur.color,
@@ -181,6 +249,10 @@ export function rehydrateSubjects(payload: ImportPayload, current: AppData): Imp
         courseworkPct: s.courseworkPct ?? cur.courseworkPct,
         ...(formerly ? { formerly } : {}),
         ...(s.archived || cur.archived ? { archived: true } : {}),
+        ...(traits ? { traits } : {}),
+        ...(mix ? { mix } : {}),
+        ...(belief != null ? { belief } : {}),
+        ...(attendancePct != null ? { attendancePct } : {}),
       };
     }),
   };
@@ -206,5 +278,13 @@ export function filterPayload(
     allocations: keep("allocations") ? payload.allocations : [],
     duels: keep("duels") ? payload.duels : [],
     meanCalls: keep("meanCalls") ? payload.meanCalls : [],
+    // T2 minor: these five used to ride the `...payload` spread through
+    // unconditionally — WireSectionKey had no keys for them, so an
+    // excluded-section toggle could never actually reach them.
+    topics: keep("topics") ? payload.topics : [],
+    topicMarks: keep("topicMarks") ? payload.topicMarks : [],
+    sessions: keep("sessions") ? payload.sessions : [],
+    rest: keep("rest") ? payload.rest : [],
+    disruptions: keep("disruptions") ? payload.disruptions : [],
   };
 }

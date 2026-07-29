@@ -25,6 +25,11 @@ export interface WireRaw {
   allocations: unknown[];
   duels: unknown[];
   meanCalls: unknown[];
+  topics: unknown[];
+  topicMarks: unknown[];
+  sessions: unknown[];
+  rest: unknown[];
+  disruptions: unknown[];
 }
 
 export type WireParse =
@@ -77,7 +82,10 @@ export function parseWire(text: string): WireParse {
   // imports; it just has nothing to say for itself.
   let meta: WireMeta = { warnings: [], questions: [], skipped: [], sources: [] };
   let promptVersion: number | null = null;
-  let raw: WireRaw = { subjects: [], entries: [], upcoming: [], allocations: [], duels: [], meanCalls: [] };
+  let raw: WireRaw = {
+    subjects: [], entries: [], upcoming: [], allocations: [], duels: [], meanCalls: [],
+    topics: [], topicMarks: [], sessions: [], rest: [], disruptions: [],
+  };
   try {
     const top = JSON.parse(slice) as unknown;
     if (isRecord(top)) {
@@ -89,6 +97,11 @@ export function parseWire(text: string): WireParse {
         allocations: rows(body.allocations),
         duels: rows(body.duels),
         meanCalls: rows(body.meanCalls),
+        topics: rows(body.topics),
+        topicMarks: rows(body.topicMarks),
+        sessions: rows(body.sessions),
+        rest: rows(body.rest),
+        disruptions: rows(body.disruptions),
       };
       if (typeof top.promptVersion === "number" && isFinite(top.promptVersion)) {
         promptVersion = top.promptVersion;

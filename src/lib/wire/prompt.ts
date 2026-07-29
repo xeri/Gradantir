@@ -14,8 +14,13 @@ import type { AppData } from "../../types";
  * lands clean.
  */
 
-/** Bumped when the payload contract changes; echoed back in the reply. */
-export const PROMPT_VERSION = 1;
+/**
+ * Bumped when the payload contract changes; echoed back in the reply.
+ * 2: Subject gained `traits`/`mix`/`belief`/`attendancePct`, Upcoming gained
+ * `hour` (T2), and five life-signal sections (`topics`, `topicMarks`,
+ * `sessions`, `rest`, `disruptions`) were added (T13) — one bump covering both.
+ */
+export const PROMPT_VERSION = 2;
 
 export interface WireOpts {
   sources: {
@@ -41,7 +46,12 @@ export const EXAMPLE_PAYLOAD = {
   promptVersion: PROMPT_VERSION,
   data: {
     subjects: [
-      { id: "s-math", name: "Mathematics", ticker: "MATH", color: "#4D7CFE", target: 85, courseworkPct: 40 },
+      {
+        id: "s-math", name: "Mathematics", ticker: "MATH", color: "#4D7CFE", target: 85, courseworkPct: 40,
+        traits: { cumulativeness: 0.8, determinism: 0.6, breadth: 0.4 },
+        mix: { knowledge: 0.3, procedure: 0.4, skill: 0.3 },
+        belief: 4, attendancePct: 96,
+      },
       { id: "s-chem", name: "Chemistry", ticker: "CHEM", target: null, courseworkPct: null },
     ],
     entries: [
@@ -59,7 +69,7 @@ export const EXAMPLE_PAYLOAD = {
     upcoming: [
       {
         id: "u-math-2026-09-12-finals", subjectId: "s-math", date: "2026-09-12", type: "Exam",
-        title: "End-of-year exam", weight: 50, teacherPred: 82,
+        title: "End-of-year exam", weight: 50, teacherPred: 82, hour: 9,
         selfPred: { point: 80, lo: 72, hi: 88 },
         aiPred: { point: 77, lo: 68, hi: 86, basis: "Prints trending +2/term but the final carries double weight and cohort ranks say the class is tightening." },
       },
@@ -67,11 +77,31 @@ export const EXAMPLE_PAYLOAD = {
     allocations: [],
     duels: [],
     meanCalls: [],
+    topics: [
+      { id: "t-math-quadratics", subjectId: "s-math", name: "Quadratics", weightPct: 25 },
+      { id: "t-chem-acids-bases", subjectId: "s-chem", name: "Acids and bases", weightPct: 20 },
+    ],
+    topicMarks: [
+      {
+        id: "tm-e-math-2026-05-14-midyear-t-math-quadratics",
+        entryId: "e-math-2026-05-14-midyear", topicId: "t-math-quadratics",
+        scorePct: 82, maxMarks: 20,
+      },
+    ],
+    sessions: [
+      { id: "ss-math-2026-05-10-0", subjectId: "s-math", date: "2026-05-10", minutes: 45, kind: "practice", topicIds: ["t-math-quadratics"] },
+    ],
+    rest: [
+      { id: "r-2026-05-13", date: "2026-05-13", hours: 6.5, bedtime: "23:40" },
+    ],
+    disruptions: [
+      { id: "d-2026-04-20-illness", date: "2026-04-20", days: 3, kind: "illness", note: "flu, off school" },
+    ],
   },
   meta: {
     warnings: ["Chemistry topic test score was recalled from memory, not documented — tagged remembered."],
     questions: ["The 2025 report mentions a 'Statistics module' — is that part of Mathematics or a separate subject?"],
-    skipped: ["Attendance figures and effort rubric grades: the book has no field for them."],
+    skipped: ["Effort rubric grades: the book has no field for them."],
     sources: ["2026 Mid-year report (PDF)", "Student interview"],
   },
 };
@@ -124,7 +154,9 @@ function outputContract(): string[] {
     `    "promptVersion": ${PROMPT_VERSION},`,
     '    "data": {',
     '      "subjects": [...], "entries": [...], "upcoming": [...],',
-    '      "allocations": [...], "duels": [...], "meanCalls": [...]',
+    '      "allocations": [...], "duels": [...], "meanCalls": [...],',
+    '      "topics": [...], "topicMarks": [...], "sessions": [...],',
+    '      "rest": [...], "disruptions": [...]',
     "    },",
     '    "meta": {',
     '      "warnings":  ["anything you were unsure about"],',
@@ -222,12 +254,19 @@ function schemaBlock(opts: WireOpts): string[] {
 function contextBlock(book: AppData, today: string, embedHistory: boolean): string[] {
   // The echo must be LOSSLESS: merge replaces subject rows wholesale, so any
   // field missing here is a field a compliant reply deletes from the book —
-  // color reshuffled, coursework split nulled, `formerly` lineage severed.
+  // color reshuffled, coursework split nulled, `formerly` lineage severed,
+  // or (T2's fields) a shape prior/self-rating quietly wiped. `traits`/`mix`/
+  // `belief`/`attendancePct` are set once and rarely revisited, so losing one
+  // to a stripped echo would be invisible for months.
   const roster = book.subjects.map((s) => ({
     id: s.id, name: s.name, ticker: s.ticker, color: s.color,
     target: s.target, courseworkPct: s.courseworkPct,
     ...(s.archived ? { archived: true } : {}),
     ...(s.formerly ? { formerly: s.formerly } : {}),
+    ...(s.traits ? { traits: s.traits } : {}),
+    ...(s.mix ? { mix: s.mix } : {}),
+    ...(s.belief != null ? { belief: s.belief } : {}),
+    ...(s.attendancePct != null ? { attendancePct: s.attendancePct } : {}),
   }));
   const years = Object.entries(book.settings.calendar?.years ?? {})
     .filter(([y]) => Math.abs(Number(y) - Number(today.slice(0, 4))) <= 1)
@@ -304,6 +343,94 @@ function documentsBlock(): string[] {
   ];
 }
 
+function markedPaperBlock(): string[] {
+  return [
+    "───────────────────────────────────────────────────────────────────",
+    "PARSING A MARKED PAPER — per-question marks → per-topic %",
+    "───────────────────────────────────────────────────────────────────",
+    "",
+    "A returned, marked paper is a richer source than its headline score:",
+    "every question maps to a syllabus topic, and the marker's own working",
+    "tells you exactly how the student did on each one.",
+    "",
+    "  1. File the whole paper as an entries[] row FIRST, as usual — a",
+    "     topicMarks row is never evidence for a result the tape cannot",
+    "     show, so the entry must exist (already on the book, or emitted",
+    "     in this same payload) before you break it down.",
+    "  2. Group the paper's questions by syllabus topic, using topics[]",
+    "     — mint a new topic row for one you have not seen before.",
+    "  3. For each topic the paper touched, sum the marks earned and the",
+    "     marks available across that topic's questions, and emit one",
+    "     topicMarks row: scorePct = earned/available × 100, maxMarks =",
+    "     available.",
+    "  4. When the marker or the student explains a lost mark (a careless",
+    "     slip, a concept that never landed, the wrong procedure, running",
+    "     out of time), set errorKind — omit rather than guess one.",
+    "",
+    "Never invent a topic breakdown for a paper you have not actually",
+    "seen marked question-by-question; a whole-paper score with no",
+    "breakdown is a complete, honest entries[] row on its own.",
+    "",
+  ];
+}
+
+function sleepExportBlock(): string[] {
+  return [
+    "───────────────────────────────────────────────────────────────────",
+    "PARSING A SLEEP EXPORT",
+    "───────────────────────────────────────────────────────────────────",
+    "",
+    "Sleep app exports (a health app, a wearable, a manual log) list one",
+    "row per NIGHT — transcribe them the same way: one rest[] row per",
+    'night, `date` = the night the reading is FOR (not the morning it',
+    'was logged), `hours` = total sleep that night, `bedtime` = "HH:MM"',
+    "24-hour clock when the export states one.",
+    "",
+    "  · One row per date. A second reading for the same night REPLACES",
+    "    the first on import — never emit two rows for one date.",
+    "  · A gap in the export (a night with no reading) is a gap in",
+    "    `rest` — leave it out. Never interpolate or average across it.",
+    "  · An export that gives only a weekly/period average with no",
+    "    nightly breakdown cannot become rest[] rows at all: note it in",
+    "    meta.skipped instead of inventing nights to fit the average.",
+    "",
+  ];
+}
+
+function subjectTraitsBlock(): string[] {
+  return [
+    "───────────────────────────────────────────────────────────────────",
+    "ASSIGNING SUBJECT TRAITS from a syllabus",
+    "───────────────────────────────────────────────────────────────────",
+    "",
+    "A course outline or syllabus tells you how a subject's OWN material",
+    "behaves — read it for that subject's `traits` and `mix`, not for",
+    "anything about how the student is doing:",
+    "",
+    "  · cumulativeness — high (→1) when each result depends on nearly",
+    "    everything before it (a language, a subject built strand on",
+    "    strand); low (→0) when units stand alone (self-contained",
+    "    modules, any of which could be assessed first).",
+    "  · determinism — high when grading is mechanical (formula/method",
+    "    marking, a single correct answer); low when it is judged (an",
+    "    essay, a practical write-up, a holistic-band rubric).",
+    "  · breadth — high when one assessment can cover most of the",
+    "    syllabus (a comprehensive final); low when assessments are",
+    "    narrowly scoped to one topic at a time.",
+    "  · mix {knowledge, procedure, skill} — read off what the",
+    "    assessment matrix actually SAYS it tests: recalling facts is",
+    "    knowledge, applying a method is procedure, a demonstrated",
+    "    practical or performance is skill. Renormalised to sum 1 on",
+    "    import — approximate proportions from the document are fine.",
+    "",
+    "These are set once and rarely revisited: omit any of them the",
+    "syllabus does not clearly support rather than guess a middling",
+    "value — a wrong prior sitting unexamined for a term is worse than",
+    "an absent one.",
+    "",
+  ];
+}
+
 function interviewBlock(opts: WireOpts): string[] {
   return [
     "───────────────────────────────────────────────────────────────────",
@@ -330,18 +457,29 @@ function interviewBlock(opts: WireOpts): string[] {
     "  5. Has a teacher given a predicted grade?",
     "  6. Their OWN prediction for anything upcoming — point, and if",
     "     offered, a range. (Goes to selfPred — their words only.)",
+    "  7. Recent study sessions on THIS subject they can recall — roughly",
+    "     how long, what kind (recall/practice/reading/class/tutoring),",
+    "     which topics if they can say. (⇒ sessions.)",
+    "  8. Their own belief about how they're doing right now, 1 (worst)",
+    "     – 5 (best), and their attendance rate if they know it. (⇒",
+    "     belief, attendancePct — no document states these.)",
     "",
     "After the last subject, the round-table — every item optional,",
     "the student's stated words only (R7), filed createdAt today (R8):",
-    "  7. Their call on their overall exam average for the current",
+    "  9. Their call on their overall exam average for the current",
     "     round, plus their forced strongest→weakest subject ranking.",
     "     (⇒ one meanCalls row.)",
-    "  8. Head-to-head readiness — \"more ready for X or Y?\" — for any",
-    "     pairs they will answer. (⇒ duels.)",
-    "  9. How they plan to split study time this term: tokens out of",
-    "     100 across subjects, real hours/week if known. (⇒ allocations.)",
-    "  10. If they want it: spread 10 chips over the score bands for a",
+    "  10. Head-to-head readiness — \"more ready for X or Y?\" — for any",
+    "      pairs they will answer. (⇒ duels.)",
+    "  11. How they plan to split study time this term: tokens out of",
+    "      100 across subjects, real hours/week if known. (⇒ allocations.)",
+    "  12. If they want it: spread 10 chips over the score bands for a",
     "      sitting they care about. (⇒ chips on that sitting.)",
+    "  13. Their sleep the last week or two — night by night if they can",
+    "      recall it. (⇒ rest.) Any stretch of days that took them off",
+    "      their normal routine — illness, family, a big event. (⇒ disruptions.)",
+    "      Skip anything they cannot recall with confidence rather than",
+    "      estimate a night or a span.",
     "",
     "Close the debrief with a compact recap of everything you will file",
     "(counts per section + anything tagged below \"official\"), get one",
@@ -417,13 +555,19 @@ function checklistBlock(opts: WireOpts): string[] {
     "",
     "  □ Output is ONE JSON object; no fences, no prose around it.",
     '  □ app = "grade-exchange", kind = "wire", promptVersion = ' + PROMPT_VERSION + ".",
-    "  □ All six data sections present (empty arrays where empty).",
-    "  □ Every roster subject echoed with its exact id.",
+    "  □ All eleven data sections present (empty arrays where empty).",
+    "  □ Every roster subject echoed with its exact id — traits/mix/",
+    "    belief/attendancePct included when the subject already has them.",
     "  □ Every entries[]/upcoming[] subjectId exists in your subjects[].",
     '  □ Every date matches "YYYY-MM-DD"; every score is 0–100.',
     "  □ Every entry carries an honest reliability tag.",
     "  □ Ids follow the recipes; upcoming rows ALWAYS have an id.",
     "  □ chips, if any, are 6 integers summing to 10.",
+    "  □ Every topicMarks row's entryId and topicId both resolve, and",
+    "    the entry and topic agree on subject.",
+    "  □ rest has at most one row per date.",
+    "  □ Nothing in topics/topicMarks/sessions/rest/disruptions the",
+    "    source material or the student did not actually state.",
     "  □ Nothing in a transcribe-only field the student did not say.",
     opts.forecasts
       ? "  □ aiPred: point inside [lo, hi]; basis ≤160 chars."
@@ -468,7 +612,9 @@ export function buildWirePrompt(opts: WireOpts, book: AppData, today: string): s
     ...hardRules(opts, today),
     ...schemaBlock(opts),
     ...contextBlock(book, today, opts.embedHistory),
-    ...(opts.sources.documents ? documentsBlock() : []),
+    ...(opts.sources.documents
+      ? [...documentsBlock(), ...markedPaperBlock(), ...sleepExportBlock(), ...subjectTraitsBlock()]
+      : []),
     ...(opts.sources.interview ? interviewBlock(opts) : []),
     ...(opts.forecasts ? forecastBlock() : []),
     ...ladderBlock(opts),

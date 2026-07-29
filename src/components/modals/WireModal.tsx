@@ -44,6 +44,11 @@ const SECTION_LABEL: Record<WireSectionKey, string> = {
   allocations: "EFFORT BUDGETS",
   duels: "DUELS",
   meanCalls: "AGGREGATE CALLS",
+  topics: "TOPICS",
+  topicMarks: "TOPIC MARKS",
+  sessions: "STUDY SESSIONS",
+  rest: "SLEEP",
+  disruptions: "DISRUPTIONS",
 };
 
 export function WireModal({
