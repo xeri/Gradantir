@@ -82,7 +82,10 @@ export function signalSkill(
   if (!enabled) return NO_SIGNAL_SKILL;
 
   const subjectsById = new Map(subjects.map((s) => [s.id, s]));
-  const resolved = register.filter((l) => l.target === "exam" && l.realized != null);
+  // crps must be present alongside realized for a resolved log (replayRegister
+  // always sets both together) — required here so `log.crps as number` below
+  // is an honest cast rather than a silent `undefined` corrupting `model[]`.
+  const resolved = register.filter((l) => l.target === "exam" && l.realized != null && l.crps != null);
 
   const you: number[] = [];
   const model: number[] = [];

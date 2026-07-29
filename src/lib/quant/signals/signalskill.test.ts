@@ -31,8 +31,9 @@ const SUB = (over: Partial<Subject> = {}): Subject => ({
   ...over,
 });
 
+let entrySeq = 0;
 const ENTRY = (over: Partial<GradeEntry> = {}): GradeEntry => ({
-  id: over.id ?? "e-" + Math.random().toString(36).slice(2),
+  id: over.id ?? "e-" + ++entrySeq,
   subjectId: "s1",
   date: CUTOFF,
   type: "Exam",
@@ -63,7 +64,10 @@ describe("signalSkill — enabled: false", () => {
     const sub = SUB({ attendancePct: 85 });
     const log = LOG();
     const skill = signalSkill([log], emptySignalBook, [sub], [], false);
-    expect(skill).toEqual(NO_SIGNAL_SKILL);
+    // Reference identity is the actual contract here (mirrors EMPTY_READINESS/
+    // IDENTITY_POOL) — `toEqual` against the very constant signalSkill returns
+    // would pass no matter what the implementation did, so assert `toBe`.
+    expect(skill).toBe(NO_SIGNAL_SKILL);
     expect(skill.w).toBe(0);
     expect(skill.rounds).toBe(0);
   });
@@ -184,34 +188,59 @@ describe("signalSkill — as-of cutoff", () => {
 });
 
 describe("signalSkill — topicMarks filtered by their entry's date", () => {
-  it("a mark whose entry lands on/after cutoff is excluded; the same mark before cutoff is not", () => {
-    const topics: Topic[] = [
-      { id: "t1", subjectId: "s1", name: "T1" },
-      { id: "t2", subjectId: "s1", name: "T2" },
-      { id: "t3", subjectId: "s1", name: "T3" },
-    ];
-    const marks: TopicMark[] = [
-      { id: "m1", entryId: "e1", topicId: "t1", scorePct: 95 },
-      { id: "m2", entryId: "e2", topicId: "t2", scorePct: 40 },
-      { id: "m3", entryId: "e3", topicId: "t3", scorePct: 70 },
-    ];
-    const sub = SUB();
-    const log = LOG({ resolvedAt: CUTOFF, point: 60 });
+  // One topic only: topicMastery's own nMarkedTopics gate (< MASTERY_MIN_MARKS
+  // = 3) keeps the mastery term at 0 no matter how bookBefore's topicMarks
+  // filter behaves, and no matter which entries topicMastery itself can see.
+  // That isolates the observable effect to timeErrorShareOf(subjMarks), which
+  // signalRead computes directly off whatever topicMarks it is handed — it
+  // does no date filtering of its own — so a difference here can only come
+  // from bookBefore's own entry-date-keyed mark filter, not from topicMastery
+  // separately excluding a mark whose entry isn't in `entries` at all (which
+  // is what confounded the previous version of this test: it varied the
+  // `entries` argument between variants, and topicMastery's own `entries`
+  // lookup would have produced the same exclusion even with no mark-level
+  // filtering in bookBefore at all).
+  const topics: Topic[] = [{ id: "t1", subjectId: "s1", name: "T1" }];
+  const marks: TopicMark[] = [
+    { id: "m1", entryId: "e1", topicId: "t1", scorePct: 80 },
+    { id: "m2", entryId: "e2", topicId: "t1", scorePct: 80 },
+    { id: "m3", entryId: "e3", topicId: "t1", scorePct: 80, errorKind: "time" },
+  ];
+  const sub = SUB();
+  const log = LOG({ resolvedAt: CUTOFF, point: 60 });
+  const bookAllMarks: SignalBook = { ...emptySignalBook, topics, topicMarks: marks };
+  const bookWithoutM3: SignalBook = { ...emptySignalBook, topics, topicMarks: marks.filter((m) => m.id !== "m3") };
 
-    const entriesBefore = [
+  it("a mark whose entry lands on/after cutoff is excluded — identical to removing it outright, the SAME entries list passed either way", () => {
+    // e3 lands ON cutoff -> bookBefore must exclude m3. `entriesOneLate` is
+    // passed unchanged to BOTH calls below, so only the topicMarks each book
+    // carries can explain any difference in the result.
+    const entriesOneLate = [
+      ENTRY({ id: "e1", date: addDays(CUTOFF, -10) }),
+      ENTRY({ id: "e2", date: addDays(CUTOFF, -10) }),
+      ENTRY({ id: "e3", date: CUTOFF }),
+    ];
+
+    const skillWithM3 = signalSkill([log], bookAllMarks, [sub], entriesOneLate, true);
+    const skillWithoutM3 = signalSkill([log], bookWithoutM3, [sub], entriesOneLate, true);
+    expect(skillWithM3).toEqual(skillWithoutM3);
+    // No "time" mark makes it through in either case -> timeErrorShare stays
+    // 0, sdMult 1, adj 0 (mastery gated off by the single-topic setup above)
+    // -> the round is skipped, not just coincidentally equal.
+    expect(skillWithM3.rounds).toBe(0);
+  });
+
+  it("negative control: the same mark, entry strictly before cutoff, IS picked up and changes the read", () => {
+    const entriesAllBefore = [
       ENTRY({ id: "e1", date: addDays(CUTOFF, -10) }),
       ENTRY({ id: "e2", date: addDays(CUTOFF, -10) }),
       ENTRY({ id: "e3", date: addDays(CUTOFF, -10) }),
     ];
-    const entriesOneLate = [
-      ENTRY({ id: "e1", date: addDays(CUTOFF, -10) }),
-      ENTRY({ id: "e2", date: addDays(CUTOFF, -10) }),
-      ENTRY({ id: "e3", date: CUTOFF }), // on cutoff -> its mark excluded, dropping below MASTERY_MIN_MARKS
-    ];
-    const book: SignalBook = { ...emptySignalBook, topics, topicMarks: marks };
-
-    const skillAllBefore = signalSkill([log], book, [sub], entriesBefore, true);
-    const skillOneLate = signalSkill([log], book, [sub], entriesOneLate, true);
-    expect(skillAllBefore).not.toEqual(skillOneLate);
+    const skillAllBefore = signalSkill([log], bookAllMarks, [sub], entriesAllBefore, true);
+    // m3's "time" errorKind now clears timeErrorShareOf's 0.25 threshold
+    // (1 of 3 marks) -> sdMult fires even though adj is still 0 -> scored.
+    expect(skillAllBefore.rounds).toBe(1);
+    const skillWithoutM3Before = signalSkill([log], bookWithoutM3, [sub], entriesAllBefore, true);
+    expect(skillAllBefore).not.toEqual(skillWithoutM3Before);
   });
 });
