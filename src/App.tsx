@@ -55,7 +55,10 @@ import {
   derivationModeOff, derivationModeOn, subscribeDerivationMode, toggleDerivationMode,
 } from "./lib/derivationMode";
 import type { DeriveCtx } from "./lib/derive";
-import type { AppData, ForecastLog, GradeEntry, Settings, Subject, Upcoming } from "./types";
+import type {
+  AppData, Disruption, DisruptionKind, ForecastLog, GradeEntry, RestLog, Settings, SessionKind, StudySession,
+  Subject, Upcoming,
+} from "./types";
 
 type View = "overview" | "charts" | "compare" | "screener" | "blotter" | "scoreboard" | "signals";
 type ModalState =
@@ -516,6 +519,36 @@ export default function App() {
      revised would erase exactly the comparison worth keeping. */
   const saveMeanCall = (rKey: string, predAvg: number, ranking: string[]) =>
     update({ meanCalls: [...(data.meanCalls ?? []), { id: uid(), roundKey: rKey, predAvg, ranking, createdAt: todayStr() }] });
+  /* THE QUICK-LOG PANELS (§D5, T16). Three discrete events, file-on-submit —
+     the panel hands back only the values a student typed; the id and the
+     "now" that land on the row are struck here, the one place a live clock
+     is allowed. Study session and rest are dated TODAY (logging one is an
+     act about today, never a day picked in the UI); disruption's date is a
+     genuine student choice (a flu logged after the fact), so it travels
+     through untouched. */
+  const logSession = (subjectId: string, minutes: number, kind: SessionKind, topicIds: string[]) => {
+    const session: StudySession = {
+      id: uid(), subjectId, date: todayStr(), minutes, kind,
+      ...(topicIds.length ? { topicIds } : {}),
+    };
+    update({ sessions: [...(data.sessions ?? []), session] });
+  };
+  /* Rest is DEDUPED BY DATE (io.ts's own sanitizer convention, mirrored here
+     so the same-night replace is true within a session too, not just after
+     the next reload's re-sanitize): a same-day resubmit replaces the
+     existing row outright rather than appending a second reading for one
+     night. */
+  const logRest = (hours: number, bedtime: string | null) => {
+    const date = todayStr();
+    const rest: RestLog = { id: uid(), date, hours, ...(bedtime ? { bedtime } : {}) };
+    update({ rest: [...(data.rest ?? []).filter((r) => r.date !== date), rest] });
+  };
+  const logDisruption = (date: string, kind: DisruptionKind, days: number | null, note: string | null) => {
+    const disruption: Disruption = {
+      id: uid(), date, kind, ...(days != null ? { days } : {}), ...(note ? { note } : {}),
+    };
+    update({ disruptions: [...(data.disruptions ?? []), disruption] });
+  };
   const setTarget = (sid: string, target: number | null) =>
     update({ subjects: subjects.map((s) => (s.id === sid ? { ...s, target } : s)) });
   const setCourseworkPct = (sid: string, courseworkPct: number | null) =>
@@ -895,6 +928,9 @@ export default function App() {
                 todayIso={todayStr()}
                 onSetSignalWeighting={setSignalWeighting}
                 onOpenSubject={setDrawerId}
+                onLogSession={logSession}
+                onLogRest={logRest}
+                onLogDisruption={logDisruption}
               />
             )}
           </div>

@@ -2,17 +2,21 @@ import { useMemo } from "react";
 import { C, FONT, microLabel } from "../../theme";
 import { Panel } from "../../components/ui/Panel";
 import { PricedBanner } from "../../components/ui/PricedBanner";
+import { LogPanels } from "./LogPanels";
 import { signalRead, type NextSitting, type SignalBook, type SignalRead, type SignalTermKey } from "../../lib/quant/signals/signalread";
 import type { SignalSkill } from "../../lib/quant/signals/signalskill";
-import type { GradeEntry, SubjectStat, Upcoming } from "../../types";
+import type { DisruptionKind, GradeEntry, SessionKind, SubjectStat, Upcoming } from "../../types";
 
 /**
  * D5 · THE SIGNALS BOARD — the life-signals channel (§D5), on its own floor.
  *
- * A read-only analytics view, the same register as the Scorecard: nothing
- * here is logged or edited (the quick-log panels, the traits/profile editors
- * and the VOI panel are separate boards), it only PRICES what the rest of
- * the terminal has already filed and shows the arithmetic honestly.
+ * Mostly a read-only analytics view, the same register as the Scorecard:
+ * nothing above the fold is logged or edited, it only PRICES what the rest
+ * of the terminal has already filed and shows the arithmetic honestly. The
+ * one exception is `LogPanels` at the bottom (T16) — quick-log intake for
+ * the three highest-frequency inputs (study session, rest night, disruption),
+ * mounted here because this is the one floor that shows what they price
+ * into. The traits/profile editors and the VOI panel remain separate boards.
  *
  * `PricedBanner` carries the `signalWeighting` switch and the channel's own
  * earned weight — the same "say the cost before the instrument is touched"
@@ -84,12 +88,21 @@ export interface SignalsProps {
   todayIso: string;
   onSetSignalWeighting: (on: boolean) => void;
   onOpenSubject?: (id: string) => void;
+  /** Quick-log intake (T16) — App.tsx assigns the id and the date/clock; this
+   *  view only ever hands it the values a student typed. */
+  onLogSession: (subjectId: string, minutes: number, kind: SessionKind, topicIds: string[]) => void;
+  onLogRest: (hours: number, bedtime: string | null) => void;
+  onLogDisruption: (date: string, kind: DisruptionKind, days: number | null, note: string | null) => void;
 }
 
 export function Signals({
   stats, entries, upcoming, signalBook, signalReads, modelMeans, signalFit, signalOn, todayIso,
-  onSetSignalWeighting, onOpenSubject,
+  onSetSignalWeighting, onOpenSubject, onLogSession, onLogRest, onLogDisruption,
 }: SignalsProps) {
+  /* The live roster to log against — a delisted desk has no line to log a
+     study session onto. Rest and disruptions are not subject-scoped at all,
+     so only the session panel actually reads this. */
+  const liveSubs = useMemo(() => stats.filter((s) => !s.sub.archived).map((s) => s.sub), [stats]);
   const rows = useMemo(() => {
     const live = stats.filter((s) => !s.sub.archived);
     return live.map((s) => {
@@ -197,6 +210,15 @@ export function Signals({
           SHIFT. W·ADJ = WHAT ACTUALLY MOVES THE NEXT-EXAM MEAN ONCE THE EARNED WEIGHT ABOVE IS APPLIED.
         </p>
       </Panel>
+
+      <LogPanels
+        subjects={liveSubs}
+        topics={signalBook.topics}
+        todayIso={todayIso}
+        onLogSession={onLogSession}
+        onLogRest={onLogRest}
+        onLogDisruption={onLogDisruption}
+      />
     </div>
   );
 }

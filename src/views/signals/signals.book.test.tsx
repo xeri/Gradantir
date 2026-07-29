@@ -45,6 +45,9 @@ function render(signalOn = true) {
       signalOn={signalOn}
       todayIso={TODAY}
       onSetSignalWeighting={() => {}}
+      onLogSession={() => {}}
+      onLogRest={() => {}}
+      onLogDisruption={() => {}}
     />,
   );
 }
