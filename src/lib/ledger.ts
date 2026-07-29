@@ -22,7 +22,9 @@ import type { AppData } from "../types";
  */
 
 /** Sections whose rows this ledger can delete one at a time. */
-export type ElicitedSection = "upcoming" | "allocations" | "duels" | "meanCalls";
+export type ElicitedSection =
+  | "upcoming" | "allocations" | "duels" | "meanCalls"
+  | "topics" | "topicMarks" | "sessions" | "rest" | "disruptions";
 
 /** Everything the ledger reports, removable or not. */
 export type SectionKey = ElicitedSection | "subjects" | "entries";
@@ -47,7 +49,10 @@ export interface LedgerSection {
   removable: boolean;
 }
 
-const REMOVABLE: ReadonlySet<SectionKey> = new Set<SectionKey>(["upcoming", "allocations", "duels", "meanCalls"]);
+const REMOVABLE: ReadonlySet<SectionKey> = new Set<SectionKey>([
+  "upcoming", "allocations", "duels", "meanCalls",
+  "topics", "topicMarks", "sessions", "rest", "disruptions",
+]);
 
 export const isRemovable = (key: SectionKey): key is ElicitedSection => REMOVABLE.has(key);
 
@@ -119,6 +124,89 @@ export function bookLedger(data: AppData, tickerOf: (id: string) => string): Led
       })),
     },
     {
+      key: "topics",
+      label: "TOPICS",
+      note: "The syllabus map inside each desk — the unit study and marks are tracked against. Removing one here does not touch topic marks or sessions already filed against it, same as dropping a print leaves its topic marks alone.",
+      removable: true,
+      rows: (data.topics ?? []).map((tp) => ({
+        id: tp.id,
+        primary: t(tp.subjectId),
+        at: tp.name,
+        secondary: [
+          tp.name,
+          tp.weightPct != null ? `${tp.weightPct}%` : "EQUAL WEIGHT",
+          tp.prereqIds?.length ? `${tp.prereqIds.length} PREREQ` : null,
+        ].filter(Boolean).join(" · "),
+      })),
+    },
+    {
+      key: "topicMarks",
+      label: "TOPIC MARKS",
+      note: "Per-topic breakdowns of a graded result. Removing one only drops the breakdown — the result and the topic it named stay on the tape.",
+      removable: true,
+      rows: (data.topicMarks ?? []).map((m) => {
+        const topic = (data.topics ?? []).find((tp) => tp.id === m.topicId);
+        const entry = data.entries.find((e) => e.id === m.entryId);
+        return {
+          id: m.id,
+          primary: t(topic?.subjectId ?? entry?.subjectId ?? ""),
+          at: entry?.date ?? "",
+          secondary: [
+            entry?.date ?? null,
+            topic?.name ?? m.topicId,
+            `${m.scorePct}%`,
+            m.errorKind ? m.errorKind.toUpperCase() : null,
+          ].filter(Boolean).join(" · "),
+        };
+      }),
+    },
+    {
+      key: "sessions",
+      label: "STUDY SESSIONS",
+      note: "Logged study blocks. Removing one drops it from the study-time tally; nothing else references it.",
+      removable: true,
+      rows: (data.sessions ?? []).map((s) => ({
+        id: s.id,
+        primary: t(s.subjectId),
+        at: s.date,
+        secondary: [
+          s.date,
+          `${s.minutes}MIN`,
+          s.kind.toUpperCase(),
+          s.topicIds?.length ? `${s.topicIds.length} TOPICS` : null,
+        ].filter(Boolean).join(" · "),
+      })),
+    },
+    {
+      key: "rest",
+      label: "SLEEP",
+      note: "Logged nights of sleep. Removing one drops that night from the rest signal.",
+      removable: true,
+      rows: (data.rest ?? []).map((r) => ({
+        id: r.id,
+        primary: r.date,
+        at: r.date,
+        secondary: [r.date, `${r.hours}H`, r.bedtime ? `BED ${r.bedtime}` : null].filter(Boolean).join(" · "),
+      })),
+    },
+    {
+      key: "disruptions",
+      label: "DISRUPTIONS",
+      note: "Logged stretches off the normal routine. Removing one drops it from the disruption signal.",
+      removable: true,
+      rows: (data.disruptions ?? []).map((d) => ({
+        id: d.id,
+        primary: d.date,
+        at: d.date,
+        secondary: [
+          d.date,
+          d.kind.toUpperCase(),
+          d.days != null ? `${d.days}D` : null,
+          d.note ?? null,
+        ].filter(Boolean).join(" · "),
+      })),
+    },
+    {
       key: "subjects",
       label: "DESKS",
       note: "The roster. Delisting or deleting a desk cascades into its prints and its lineage, so it lives in the desk drawer where you can see what goes with it.",
@@ -152,6 +240,18 @@ export function removeFromBook(data: AppData, key: SectionKey, id: string): AppD
     case "allocations": return { ...data, allocations: (data.allocations ?? []).filter((x) => x.id !== id) };
     case "duels": return { ...data, duels: (data.duels ?? []).filter((x) => x.id !== id) };
     case "meanCalls": return { ...data, meanCalls: (data.meanCalls ?? []).filter((x) => x.id !== id) };
+    // topics/topicMarks/sessions carry foreign keys into each other
+    // (topicMarks -> topics + entries, sessions -> topics), but removal
+    // here never cascades — the same precedent App.tsx's deleteEntry
+    // already sets for entries vs topicMarks. A dropped row's dependents
+    // are left pointing at a ghost id rather than swept silently; the next
+    // sanitize pass (io.ts) is what actually drops orphaned rows, same as
+    // it always has. rest/disruptions reference nothing.
+    case "topics": return { ...data, topics: (data.topics ?? []).filter((x) => x.id !== id) };
+    case "topicMarks": return { ...data, topicMarks: (data.topicMarks ?? []).filter((x) => x.id !== id) };
+    case "sessions": return { ...data, sessions: (data.sessions ?? []).filter((x) => x.id !== id) };
+    case "rest": return { ...data, rest: (data.rest ?? []).filter((x) => x.id !== id) };
+    case "disruptions": return { ...data, disruptions: (data.disruptions ?? []).filter((x) => x.id !== id) };
     default: return data;
   }
 }
@@ -163,6 +263,11 @@ export function clearSection(data: AppData, key: SectionKey): AppData {
     case "allocations": return { ...data, allocations: [] };
     case "duels": return { ...data, duels: [] };
     case "meanCalls": return { ...data, meanCalls: [] };
+    case "topics": return { ...data, topics: [] };
+    case "topicMarks": return { ...data, topicMarks: [] };
+    case "sessions": return { ...data, sessions: [] };
+    case "rest": return { ...data, rest: [] };
+    case "disruptions": return { ...data, disruptions: [] };
     default: return data;
   }
 }
