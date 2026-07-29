@@ -28,10 +28,12 @@ export function coerceStored(json: string): AppData | null {
     /* `d.forecasts` from an older build is deliberately dropped: the register is
        derived from the tape now, not stored (§26). Leaving it in would let a
        model run from a previous version keep correcting today's board. */
-    const { subjects, entries, upcoming, allocations, duels, meanCalls } = sanitizeBook(
-      d.subjects, d.entries,
-      { upcoming: arr(d.upcoming), allocations: arr(d.allocations), duels: arr(d.duels), meanCalls: arr(d.meanCalls) },
-    );
+    const { subjects, entries, upcoming, allocations, duels, meanCalls, topics, topicMarks, sessions, rest, disruptions } =
+      sanitizeBook(
+        d.subjects, d.entries,
+        { upcoming: arr(d.upcoming), allocations: arr(d.allocations), duels: arr(d.duels), meanCalls: arr(d.meanCalls) },
+        { topics: arr(d.topics), topicMarks: arr(d.topicMarks), sessions: arr(d.sessions), rest: arr(d.rest), disruptions: arr(d.disruptions) },
+      );
     return {
       subjects,
       entries,
@@ -41,6 +43,11 @@ export function coerceStored(json: string): AppData | null {
       ...(allocations.length ? { allocations } : {}),
       ...(duels.length ? { duels } : {}),
       ...(meanCalls.length ? { meanCalls } : {}),
+      ...(topics.length ? { topics } : {}),
+      ...(topicMarks.length ? { topicMarks } : {}),
+      ...(sessions.length ? { sessions } : {}),
+      ...(rest.length ? { rest } : {}),
+      ...(disruptions.length ? { disruptions } : {}),
     };
   } catch {
     return null;

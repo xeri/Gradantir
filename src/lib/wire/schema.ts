@@ -104,6 +104,23 @@ export const SUBJECT_FIELDS = {
     constraint: "number 0–100 or null — the % of the FINAL grade that coursework (non-exam work) carries.",
     hint: "Course outlines and assessment matrices state this ('internal assessment: 60%').",
   },
+  traits: {
+    label: "shape priors",
+    constraint: "object {cumulativeness, determinism, breadth}, each 0–1, or omit — how this subject's OWN material behaves, not the student's performance in it. Omit unless well supported; never invent a value.",
+    hint: "cumulativeness: does each result build on everything before it (a language) or stand alone (a one-off unit)? determinism: is grading mechanical (formula marking) or judged (an essay)? breadth: can one assessment cover most of the syllabus?",
+  },
+  mix: {
+    label: "assessment mix",
+    constraint: "object {knowledge, procedure, skill}, non-negative — the split of what this subject actually tests. Renormalised to sum 1 on import; omit unless stated or clearly inferable from an assessment matrix.",
+  },
+  belief: {
+    label: "self-rated standing",
+    constraint: "integer 1–5 or null — the STUDENT'S OWN confidence in their current standing. Transcribe-only.",
+  },
+  attendancePct: {
+    label: "attendance",
+    constraint: "number 0–100 or null — this subject's attendance rate, as reported.",
+  },
 } satisfies Record<keyof Subject, FieldSpec>;
 
 export const ENTRY_FIELDS = {
@@ -233,6 +250,11 @@ export const UPCOMING_FIELDS = {
   aiPred: {
     label: "the wire's call",
     constraint: "object {point, lo?, hi?, basis?} — YOUR OWN forecast. Forecast module only; omit entirely otherwise.",
+  },
+  hour: {
+    label: "hour of day",
+    constraint: "integer 0–23 or null — the hour the paper starts, 24-hour clock.",
+    hint: "Exam timetables print start times.",
   },
 } satisfies Record<keyof Upcoming, FieldSpec>;
 

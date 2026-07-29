@@ -2,11 +2,22 @@ import { PALETTE, TYPES, freshSettings } from "../constants";
 import { supersededBy } from "./lineage";
 import { clamp, round1, uid } from "./utils";
 import type {
-  AiPrediction, Allocation, AppData, AssessmentType, Duel, GradeEntry, MeanCall,
-  SelfPrediction, Settings, Subject, Upcoming,
+  AiPrediction, Allocation, AppData, AssessmentType, Disruption, DisruptionKind, Duel, ErrorKind,
+  GradeEntry, MeanCall, RestLog, SelfPrediction, Settings, SessionKind, StudySession,
+  Subject, SubjectMix, SubjectTraits, Topic, TopicMark, Upcoming,
 } from "../types";
 
 /**
+ * v10 adds the life-signals intake: syllabus topics and per-result topic
+ * marks, logged study sessions, sleep and disruptions, plus subject-level
+ * shape priors (`traits`, `mix`), self-rated `belief`/`attendancePct`, a
+ * person-level `profile`, an hour-of-day on a sitting, and the
+ * `signalWeighting` switch. The five new arrays are grouped as
+ * `SignalIntake` and follow the same v8 doctrine as the forward calendar:
+ * always present in the envelope, empty when nothing is logged. A v9 export
+ * carries none of this — every new field is optional or defaults to "on" —
+ * and imports unchanged.
+ *
  * v9 lets a sitting carry the wire's call (`aiPred`, §29) and adds the opt-in
  * `aiWeighting` switch. A v8 export imports unchanged: a missing field is a
  * sitting the wire never called, and a missing switch leaves the channel OFF —
@@ -34,7 +45,7 @@ import type {
  * entry pin its own term. Older exports import unchanged: a missing calendar
  * falls back to the published dates, and an unpinned entry follows its date.
  */
-export const EXPORT_VERSION = 9;
+export const EXPORT_VERSION = 10;
 
 /** The behavioural-layer arrays, grouped so the sanitizer signature stays short. */
 export interface ForwardCalendar {
@@ -42,6 +53,15 @@ export interface ForwardCalendar {
   allocations: Allocation[];
   duels: Duel[];
   meanCalls: MeanCall[];
+}
+
+/** The life-signals arrays (v10) — grouped the same way as ForwardCalendar. */
+export interface SignalIntake {
+  topics: Topic[];
+  topicMarks: TopicMark[];
+  sessions: StudySession[];
+  rest: RestLog[];
+  disruptions: Disruption[];
 }
 
 export interface ExportEnvelope {
@@ -56,6 +76,7 @@ export interface ExportEnvelope {
   data: {
     subjects: Subject[]; entries: GradeEntry[]; settings: Settings;
     upcoming: Upcoming[]; allocations: Allocation[]; duels: Duel[]; meanCalls: MeanCall[];
+    topics: Topic[]; topicMarks: TopicMark[]; sessions: StudySession[]; rest: RestLog[]; disruptions: Disruption[];
   };
 }
 
@@ -72,12 +93,17 @@ export function serializeExport(data: AppData): string {
       allocations: data.allocations ?? [],
       duels: data.duels ?? [],
       meanCalls: data.meanCalls ?? [],
+      topics: data.topics ?? [],
+      topicMarks: data.topicMarks ?? [],
+      sessions: data.sessions ?? [],
+      rest: data.rest ?? [],
+      disruptions: data.disruptions ?? [],
     },
   };
   return JSON.stringify(env, null, 2);
 }
 
-export interface ImportPayload extends ForwardCalendar {
+export interface ImportPayload extends ForwardCalendar, SignalIntake {
   subjects: Subject[];
   entries: GradeEntry[];
   settings: Settings | null;
@@ -116,6 +142,21 @@ export function sanitizeSettings(raw: unknown): Settings {
   // means off, so a book exported before the wire existed — or one that never
   // opted in — keeps the AI channel out of its forecasts entirely.
   if (raw.aiWeighting === true) out.aiWeighting = true;
+  if (raw.signalWeighting === false) out.signalWeighting = false;
+  if (isRecord(raw.profile)) {
+    const p = raw.profile;
+    const chronotype = p.chronotype === "lark" || p.chronotype === "owl" ? p.chronotype : null;
+    const testAnxiety =
+      Number.isInteger(p.testAnxiety) && (p.testAnxiety as number) >= 1 && (p.testAnxiety as number) <= 5
+        ? (p.testAnxiety as number)
+        : null;
+    if (chronotype != null || testAnxiety != null) {
+      out.profile = {
+        ...(chronotype != null ? { chronotype } : {}),
+        ...(testAnxiety != null ? { testAnxiety } : {}),
+      };
+    }
+  }
   // The affinity prior is stored only when a caller actually set a correlation;
   // 0 (or anything out of [0, 1)) leaves it absent — the quadrature default.
   if (typeof raw.subjectCorr === "number" && isFinite(raw.subjectCorr) && raw.subjectCorr > 0 && raw.subjectCorr < 1) {
@@ -169,6 +210,29 @@ export function sanitizeSettings(raw: unknown): Settings {
   return out;
 }
 
+/** A subject's shape priors: all three must be finite to keep any of them. */
+function sanitizeTraits(raw: unknown): SubjectTraits | null {
+  if (!isRecord(raw)) return null;
+  const { cumulativeness, determinism, breadth } = raw;
+  if (!finite(cumulativeness) || !finite(determinism) || !finite(breadth)) return null;
+  return {
+    cumulativeness: clamp(cumulativeness, 0, 1),
+    determinism: clamp(determinism, 0, 1),
+    breadth: clamp(breadth, 0, 1),
+  };
+}
+
+/** A subject's assessment mix: non-negative and renormalised to sum 1. */
+function sanitizeMix(raw: unknown): SubjectMix | null {
+  if (!isRecord(raw)) return null;
+  const { knowledge, procedure, skill } = raw;
+  if (!finite(knowledge) || !finite(procedure) || !finite(skill)) return null;
+  if (knowledge < 0 || procedure < 0 || skill < 0) return null;
+  const sum = knowledge + procedure + skill;
+  if (sum === 0) return null;
+  return { knowledge: knowledge / sum, procedure: procedure / sum, skill: skill / sum };
+}
+
 function sanitizeSubject(raw: unknown, index: number): Subject | null {
   if (!isRecord(raw)) return null;
   const { id, name, ticker } = raw;
@@ -183,10 +247,19 @@ function sanitizeSubject(raw: unknown, index: number): Subject | null {
   // which is the shape of the doubled-denominator bug. The pointer is checked
   // against the imported roster in `parseImport`, once every id is known.
   const formerly = typeof raw.formerly === "string" && raw.formerly ? raw.formerly : null;
+  const traits = sanitizeTraits(raw.traits);
+  const mix = sanitizeMix(raw.mix);
+  const belief = Number.isInteger(raw.belief) && (raw.belief as number) >= 1 && (raw.belief as number) <= 5 ? (raw.belief as number) : null;
+  const attendancePct =
+    typeof raw.attendancePct === "number" && isFinite(raw.attendancePct) ? clamp(round1(raw.attendancePct), 0, 100) : null;
   return {
     id, name: name.trim(), ticker: tk, color, target, courseworkPct,
     ...(raw.archived === true ? { archived: true } : {}),
     ...(formerly ? { formerly } : {}),
+    ...(traits ? { traits } : {}),
+    ...(mix ? { mix } : {}),
+    ...(belief != null ? { belief } : {}),
+    ...(attendancePct != null ? { attendancePct } : {}),
   };
 }
 
@@ -309,6 +382,8 @@ function sanitizeUpcoming(raw: unknown, ids: Set<string>): Upcoming | null {
   if (chips) out.chips = chips;
   const aiPred = sanitizeAiPred(raw.aiPred);
   if (aiPred) out.aiPred = aiPred;
+  const hour = Number.isInteger(raw.hour) && (raw.hour as number) >= 0 && (raw.hour as number) <= 23 ? (raw.hour as number) : null;
+  if (hour != null) out.hour = hour;
   return out;
 }
 
@@ -359,6 +434,119 @@ function sanitizeMeanCall(raw: unknown, ids: Set<string>): MeanCall | null {
   return { id, roundKey, predAvg: clamp(round1(predAvg), 0, 100), ranking: rank, createdAt };
 }
 
+export const SESSION_KINDS = new Set(["recall", "practice", "reading", "class", "tutoring"]);
+export const ERROR_KINDS = new Set(["careless", "conceptual", "procedural", "time"]);
+export const DISRUPTION_KINDS = new Set(["illness", "family", "event", "other"]);
+const BEDTIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/**
+ * One syllabus topic. `prereqIds` is trusted here only as "an array of
+ * strings" — filtering it to known, same-subject, non-self ids needs the
+ * whole roster of topics, so that pass runs a second time in `sanitizeBook`
+ * once every topic id is known (mirrors how `Subject.formerly` is checked).
+ */
+function sanitizeTopic(raw: unknown, subjectIds: Set<string>): Topic | null {
+  if (!isRecord(raw)) return null;
+  const { id, subjectId, name } = raw;
+  if (typeof id !== "string" || !id) return null;
+  if (typeof subjectId !== "string" || !subjectIds.has(subjectId)) return null;
+  if (typeof name !== "string" || !name.trim()) return null;
+  const weightPct = typeof raw.weightPct === "number" && isFinite(raw.weightPct) ? clamp(round1(raw.weightPct), 0, 100) : null;
+  const out: Topic = { id, subjectId, name: name.trim() };
+  if (weightPct != null) out.weightPct = weightPct;
+  if (Array.isArray(raw.prereqIds)) {
+    const ids = raw.prereqIds.filter((p): p is string => typeof p === "string" && !!p);
+    if (ids.length) out.prereqIds = [...new Set(ids)];
+  }
+  return out;
+}
+
+/**
+ * One per-topic breakdown of a graded result. The DUAL FOREIGN KEY is the
+ * whole point: `entryId` and `topicId` must each resolve to a row this book
+ * actually holds, AND that entry and that topic must agree on subject — a
+ * mark cannot silently attach a topic from one desk to a paper sat on
+ * another. `entrySubjectOf`/`topicSubjectOf` are subjectId lookups built
+ * from the already-sanitized entries/topics, so this can only ever pass
+ * against rows that themselves survived.
+ */
+function sanitizeTopicMark(
+  raw: unknown,
+  entrySubjectOf: Map<string, string>,
+  topicSubjectOf: Map<string, string>,
+): TopicMark | null {
+  if (!isRecord(raw)) return null;
+  const { id, entryId, topicId, scorePct } = raw;
+  if (typeof id !== "string" || !id) return null;
+  if (typeof entryId !== "string" || !entrySubjectOf.has(entryId)) return null;
+  if (typeof topicId !== "string" || !topicSubjectOf.has(topicId)) return null;
+  if (entrySubjectOf.get(entryId) !== topicSubjectOf.get(topicId)) return null;
+  if (!finite(scorePct)) return null;
+  const out: TopicMark = { id, entryId, topicId, scorePct: clamp(round1(scorePct), 0, 100) };
+  if (finite(raw.maxMarks) && raw.maxMarks > 0) out.maxMarks = round1(raw.maxMarks);
+  if (typeof raw.errorKind === "string" && ERROR_KINDS.has(raw.errorKind)) out.errorKind = raw.errorKind as ErrorKind;
+  return out;
+}
+
+/** One logged block of study time. `topicIds` is filtered to the SAME subject's own topics. */
+function sanitizeSession(raw: unknown, subjectIds: Set<string>, topicsBySubject: Map<string, Set<string>>): StudySession | null {
+  if (!isRecord(raw)) return null;
+  const { id, subjectId, date, minutes, kind } = raw;
+  if (typeof id !== "string" || !id) return null;
+  if (typeof subjectId !== "string" || !subjectIds.has(subjectId)) return null;
+  if (typeof date !== "string" || !ISO_DATE.test(date)) return null;
+  if (!finite(minutes)) return null;
+  if (typeof kind !== "string" || !SESSION_KINDS.has(kind)) return null;
+  const out: StudySession = { id, subjectId, date, minutes: clamp(Math.round(minutes), 1, 600), kind: kind as SessionKind };
+  if (Array.isArray(raw.topicIds)) {
+    const known = topicsBySubject.get(subjectId) ?? new Set<string>();
+    const topicIds = [...new Set(raw.topicIds.filter((t): t is string => typeof t === "string" && known.has(t)))];
+    if (topicIds.length) out.topicIds = topicIds;
+  }
+  return out;
+}
+
+/** One night's sleep. Not FK'd to a subject — nothing here to drop for a bad reference. */
+function sanitizeRest(raw: unknown): RestLog | null {
+  if (!isRecord(raw)) return null;
+  const { id, date, hours } = raw;
+  if (typeof id !== "string" || !id) return null;
+  if (typeof date !== "string" || !ISO_DATE.test(date)) return null;
+  if (!finite(hours)) return null;
+  const out: RestLog = { id, date, hours: clamp(round1(hours), 0, 14) };
+  if (typeof raw.bedtime === "string" && BEDTIME_RE.test(raw.bedtime)) out.bedtime = raw.bedtime;
+  return out;
+}
+
+/**
+ * Rest logs dedupe by DATE, not id — one night can only have one reading, so
+ * a later row for the same date replaces an earlier one outright (last wins).
+ * A final id-dedupe pass keeps the shape consistent with every other list
+ * even though it should be a no-op once the dates are unique.
+ */
+function sanitizeRestList(raw: unknown[]): RestLog[] {
+  const byDate = new Map<string, RestLog>();
+  for (const r of raw) {
+    const item = sanitizeRest(r);
+    if (item) byDate.set(item.date, item);
+  }
+  return sanitizeById([...byDate.values()], (r) => r as RestLog);
+}
+
+/** A stretch of days off the normal routine. Not FK'd to a subject. */
+function sanitizeDisruption(raw: unknown): Disruption | null {
+  if (!isRecord(raw)) return null;
+  const { id, date, kind } = raw;
+  if (typeof id !== "string" || !id) return null;
+  if (typeof date !== "string" || !ISO_DATE.test(date)) return null;
+  if (typeof kind !== "string" || !DISRUPTION_KINDS.has(kind)) return null;
+  const out: Disruption = { id, date, kind: kind as DisruptionKind };
+  const days = Number.isInteger(raw.days) ? clamp(raw.days as number, 1, 60) : null;
+  if (days != null) out.days = days;
+  if (typeof raw.note === "string" && raw.note.trim()) out.note = raw.note.trim().slice(0, 160);
+  return out;
+}
+
 /**
  * Validate a roster + tape to the standard an import is held to, and return
  * only rows that cannot hurt the engine.
@@ -386,7 +574,8 @@ export function sanitizeBook(
   rawSubjects: unknown[],
   rawEntries: unknown[],
   rawCalendar: Partial<Record<keyof ForwardCalendar, unknown[]>> = {},
-): { subjects: Subject[]; entries: GradeEntry[] } & ForwardCalendar {
+  rawSignal: Partial<Record<keyof SignalIntake, unknown[]>> = {},
+): { subjects: Subject[]; entries: GradeEntry[] } & ForwardCalendar & SignalIntake {
   const subjects: Subject[] = [];
   const seen = new Set<string>();
   rawSubjects.forEach((s, i) => {
@@ -422,12 +611,38 @@ export function sanitizeBook(
     if (subjects[i].archived) continue;
     if (supersededBy(subjects[i], subjects, entries)) subjects[i] = { ...subjects[i], archived: true };
   }
+  // Topics validate against the roster like everything else, then get a SECOND
+  // pass once every topic id is known: prereqIds are filtered to the SAME
+  // subject's own topics, deduped, and a self-reference is dropped — exactly
+  // the two-stage check `formerly` gets above, for the same reason (the full
+  // roster does not exist until every row has been through the first pass).
+  const topics = sanitizeById(rawSignal.topics ?? [], (r) => sanitizeTopic(r, ids));
+  const topicsBySubject = new Map<string, Set<string>>();
+  for (const t of topics) {
+    if (!topicsBySubject.has(t.subjectId)) topicsBySubject.set(t.subjectId, new Set());
+    topicsBySubject.get(t.subjectId)!.add(t.id);
+  }
+  for (let i = 0; i < topics.length; i++) {
+    const t = topics[i];
+    if (!t.prereqIds) continue;
+    const known = topicsBySubject.get(t.subjectId) ?? new Set<string>();
+    const prereqIds = [...new Set(t.prereqIds.filter((p) => known.has(p) && p !== t.id))];
+    if (prereqIds.length) topics[i] = { ...t, prereqIds };
+    else { const { prereqIds: _drop, ...rest } = t; topics[i] = rest; }
+  }
+  const entrySubjectOf = new Map(entries.map((e) => [e.id, e.subjectId]));
+  const topicSubjectOf = new Map(topics.map((t) => [t.id, t.subjectId]));
   return {
     subjects, entries,
     upcoming: sanitizeById(rawCalendar.upcoming ?? [], (r) => sanitizeUpcoming(r, ids)),
     allocations: sanitizeById(rawCalendar.allocations ?? [], (r) => sanitizeAllocation(r, ids)),
     duels: sanitizeById(rawCalendar.duels ?? [], (r) => sanitizeDuel(r, ids)),
     meanCalls: sanitizeById(rawCalendar.meanCalls ?? [], (r) => sanitizeMeanCall(r, ids)),
+    topics,
+    topicMarks: sanitizeById(rawSignal.topicMarks ?? [], (r) => sanitizeTopicMark(r, entrySubjectOf, topicSubjectOf)),
+    sessions: sanitizeById(rawSignal.sessions ?? [], (r) => sanitizeSession(r, ids, topicsBySubject)),
+    rest: sanitizeRestList(rawSignal.rest ?? []),
+    disruptions: sanitizeById(rawSignal.disruptions ?? [], sanitizeDisruption),
   };
 }
 
@@ -437,6 +652,15 @@ function rawCalendarOf(body: Record<string, unknown>): Partial<Record<keyof Forw
   return {
     upcoming: arr(body.upcoming), allocations: arr(body.allocations),
     duels: arr(body.duels), meanCalls: arr(body.meanCalls),
+  };
+}
+
+/** Pull the raw life-signals arrays out of a parsed body, defaulting to []. */
+function rawSignalOf(body: Record<string, unknown>): Partial<Record<keyof SignalIntake, unknown[]>> {
+  const arr = (v: unknown) => (Array.isArray(v) ? v : []);
+  return {
+    topics: arr(body.topics), topicMarks: arr(body.topicMarks), sessions: arr(body.sessions),
+    rest: arr(body.rest), disruptions: arr(body.disruptions),
   };
 }
 
@@ -457,12 +681,15 @@ export function parseImport(json: string): ImportResult {
      engine's own predictions; they are derived state, and importing them would
      let a stale model run — possibly somebody else's — set this book's bias
      correction. The register is replayed from the prints instead (§26). */
-  const { subjects, entries, upcoming, allocations, duels, meanCalls } =
-    sanitizeBook(body.subjects, body.entries, rawCalendarOf(body));
+  const { subjects, entries, upcoming, allocations, duels, meanCalls, topics, topicMarks, sessions, rest, disruptions } =
+    sanitizeBook(body.subjects, body.entries, rawCalendarOf(body), rawSignalOf(body));
   if (!subjects.length) return { ok: false, error: "No valid subjects in that file." };
   const dropped = (body.subjects.length - subjects.length) + (body.entries.length - entries.length);
   const settings = "settings" in body && body.settings != null ? sanitizeSettings(body.settings) : null;
-  return { ok: true, payload: { subjects, entries, settings, upcoming, allocations, duels, meanCalls, dropped } };
+  return {
+    ok: true,
+    payload: { subjects, entries, settings, upcoming, allocations, duels, meanCalls, topics, topicMarks, sessions, rest, disruptions, dropped },
+  };
 }
 
 /** The behavioural-layer arrays, spread onto an AppData only when non-empty. */
@@ -475,6 +702,17 @@ function calendarPatch(cal: Partial<ForwardCalendar>): Partial<AppData> {
   };
 }
 
+/** The life-signals arrays, spread onto an AppData only when non-empty. */
+function signalPatch(sig: Partial<SignalIntake>): Partial<AppData> {
+  return {
+    ...(sig.topics?.length ? { topics: sig.topics } : {}),
+    ...(sig.topicMarks?.length ? { topicMarks: sig.topicMarks } : {}),
+    ...(sig.sessions?.length ? { sessions: sig.sessions } : {}),
+    ...(sig.rest?.length ? { rest: sig.rest } : {}),
+    ...(sig.disruptions?.length ? { disruptions: sig.disruptions } : {}),
+  };
+}
+
 /** Replace the book with the import. */
 export function replaceData(payload: ImportPayload): AppData {
   return {
@@ -483,6 +721,7 @@ export function replaceData(payload: ImportPayload): AppData {
     settings: payload.settings ?? freshSettings(),
     sample: false,
     ...calendarPatch(payload),
+    ...signalPatch(payload),
   };
 }
 
@@ -523,12 +762,19 @@ export function mergeData(current: AppData, payload: ImportPayload): AppData {
     subMap.set(id, { ...s, id, ...(formerly !== undefined ? { formerly } : {}) });
   }
   const entMap = new Map(current.entries.map((e) => [e.id, e]));
+  // Tracks payload entry id -> its merged id, but only for entries that got a
+  // fresh one (their desk was remapped). A topicMark referencing this entry
+  // has to follow it the same way `formerly` follows a remapped subject.
+  const entryRemap = new Map<string, string>();
   for (const e of payload.entries) {
     const subjectId = remap.get(e.subjectId);
     // A print landing on a re-listed desk needs a fresh id too, or it would
     // overwrite the same-id print already sitting on the original desk.
-    if (subjectId) { const id = uid(); entMap.set(id, { ...e, id, subjectId }); }
-    else entMap.set(e.id, e);
+    if (subjectId) {
+      const id = uid();
+      entMap.set(id, { ...e, id, subjectId });
+      entryRemap.set(e.id, id);
+    } else entMap.set(e.id, e);
   }
   // The behavioural layer is personal to a model run and keyed on subject ids.
   // Keep the current book's, and fold in only incoming items every referenced
@@ -546,11 +792,61 @@ export function mergeData(current: AppData, payload: ImportPayload): AppData {
     duels: mergeCalendar(current.duels ?? [], payload.duels ?? [], (d) => [d.aId, d.bId]),
     meanCalls: mergeCalendar(current.meanCalls ?? [], payload.meanCalls ?? [], (m) => m.ranking),
   };
+  // Topics carry `subjectId` directly, so — unlike the behavioural layer above
+  // — they follow the SAME rule as entries: a remapped desk's topics get a
+  // fresh id too (to avoid colliding with a topic already sitting under the
+  // original desk), everything else is a plain id-keyed merge. `topicRemap`
+  // is built as its own pass first so a topic's `prereqIds` (always same-
+  // subject siblings) can be rewritten consistently regardless of array order.
+  const topicRemap = new Map<string, string>();
+  for (const t of payload.topics) {
+    if (remap.has(t.subjectId)) topicRemap.set(t.id, uid());
+  }
+  const topicMap = new Map((current.topics ?? []).map((t) => [t.id, t]));
+  for (const t of payload.topics) {
+    const newSubjectId = remap.get(t.subjectId);
+    const id = topicRemap.get(t.id) ?? t.id;
+    const subjectId = newSubjectId ?? t.subjectId;
+    const prereqIds = t.prereqIds?.map((p) => topicRemap.get(p) ?? p);
+    topicMap.set(id, { ...t, id, subjectId, ...(prereqIds !== undefined ? { prereqIds } : {}) });
+  }
+  // Sessions follow the identical rule, and their `topicIds` remap the same
+  // way `prereqIds` does above.
+  const sessionMap = new Map((current.sessions ?? []).map((s) => [s.id, s]));
+  for (const s of payload.sessions) {
+    const newSubjectId = remap.get(s.subjectId);
+    const id = newSubjectId ? uid() : s.id;
+    const subjectId = newSubjectId ?? s.subjectId;
+    const topicIds = s.topicIds?.map((t) => topicRemap.get(t) ?? t);
+    sessionMap.set(id, { ...s, id, subjectId, ...(topicIds !== undefined ? { topicIds } : {}) });
+  }
+  // TopicMarks carry no subjectId of their own — they follow whichever of
+  // their two references moved. Either one changing means the row now
+  // describes the re-listed desk's data, so it gets a fresh id too, the same
+  // as an entry or a topic would.
+  const topicMarkMap = new Map((current.topicMarks ?? []).map((m) => [m.id, m]));
+  for (const m of payload.topicMarks) {
+    const newEntryId = entryRemap.get(m.entryId);
+    const newTopicId = topicRemap.get(m.topicId);
+    const id = newEntryId !== undefined || newTopicId !== undefined ? uid() : m.id;
+    topicMarkMap.set(id, { ...m, id, entryId: newEntryId ?? m.entryId, topicId: newTopicId ?? m.topicId });
+  }
+  // Rest and disruptions carry no subject reference at all — a plain id-keyed
+  // merge, incoming winning on collision, same as the behavioural layer's
+  // helper with no refs to check.
+  const sig: SignalIntake = {
+    topics: [...topicMap.values()],
+    topicMarks: [...topicMarkMap.values()],
+    sessions: [...sessionMap.values()],
+    rest: mergeCalendar(current.rest ?? [], payload.rest ?? [], () => []),
+    disruptions: mergeCalendar(current.disruptions ?? [], payload.disruptions ?? [], () => []),
+  };
   return {
     subjects: [...subMap.values()],
     entries: [...entMap.values()],
     settings: payload.settings ?? current.settings,
     sample: false,
     ...calendarPatch(cal),
+    ...signalPatch(sig),
   };
 }

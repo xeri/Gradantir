@@ -48,6 +48,22 @@ describe("coerceStored", () => {
     const d = coerceStored(JSON.stringify(stored));
     expect(d!.upcoming).toEqual(stored.upcoming);
   });
+  it("carries the five life-signals slices through a load (v10)", () => {
+    const stored: AppData = {
+      ...v3Book,
+      topics: [{ id: "t1", subjectId: "s1", name: "Algebra", weightPct: 40 }],
+      topicMarks: [{ id: "m1", entryId: "e1", topicId: "t1", scorePct: 80 }],
+      sessions: [{ id: "sess1", subjectId: "s1", date: "2026-05-10", minutes: 30, kind: "practice", topicIds: ["t1"] }],
+      rest: [{ id: "r1", date: "2026-05-09", hours: 7 }],
+      disruptions: [{ id: "d1", date: "2026-05-05", kind: "illness" }],
+    };
+    const d = coerceStored(JSON.stringify(stored));
+    expect(d!.topics).toEqual(stored.topics);
+    expect(d!.topicMarks).toEqual(stored.topicMarks);
+    expect(d!.sessions).toEqual(stored.sessions);
+    expect(d!.rest).toEqual(stored.rest);
+    expect(d!.disruptions).toEqual(stored.disruptions);
+  });
   it("returns null for garbage", () => {
     expect(coerceStored("not json{")).toBeNull();
     expect(coerceStored("null")).toBeNull();

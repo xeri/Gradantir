@@ -32,7 +32,7 @@ describe("the register is not part of the book (v8)", () => {
 
   it("never writes predictions into an export", () => {
     const env = JSON.parse(serializeExport(book));
-    expect(env.version).toBe(9);
+    expect(env.version).toBe(10);
     expect("forecasts" in env.data).toBe(false);
   });
 
@@ -369,6 +369,7 @@ describe("replace/merge", () => {
     ],
     settings: null,
     upcoming: [], allocations: [], duels: [], meanCalls: [],
+    topics: [], topicMarks: [], sessions: [], rest: [], disruptions: [],
     dropped: 0,
   };
   it("replace swaps the whole book and clears the sample flag", () => {
@@ -394,6 +395,7 @@ describe("replace/merge", () => {
       entries: [{ id: "t1", subjectId: "s-math", date: "2026-05-02", type: "Exam" as const, score: 41, title: "", classAvg: null, yearAvg: null, rank: null, cohortN: null, worthPct: null }],
       settings: null,
       upcoming: [], allocations: [], duels: [], meanCalls: [],
+      topics: [], topicMarks: [], sessions: [], rest: [], disruptions: [],
       dropped: 0,
     };
     const out = mergeData(mine, theirs);
@@ -486,5 +488,201 @@ describe("a hand-filed term survives the round trip", () => {
     if (!res.ok) return;
     expect(res.payload.entries[0].term).toBe("2026-T3");
     expect(res.payload.entries[1].term).toBeUndefined();
+  });
+});
+
+describe("the life-signals slices (v10)", () => {
+  const withSignals: AppData = {
+    ...book,
+    subjects: [
+      {
+        ...book.subjects[0],
+        traits: { cumulativeness: 0.8, determinism: 0.3, breadth: 0.5 },
+        mix: { knowledge: 0.5, procedure: 0.25, skill: 0.25 },
+        belief: 4,
+        attendancePct: 92.3,
+      },
+      book.subjects[1],
+    ],
+    settings: { ...freshSettings(), signalWeighting: false, profile: { chronotype: "owl", testAnxiety: 3 } },
+    upcoming: [{ id: "u1", subjectId: "s1", date: "2026-09-01", type: "Exam", title: "Finals", hour: 14 }],
+    topics: [
+      { id: "t1", subjectId: "s1", name: "Algebra", weightPct: 40 },
+      { id: "t2", subjectId: "s1", name: "Calculus", weightPct: 60, prereqIds: ["t1"] },
+    ],
+    topicMarks: [{ id: "m1", entryId: "e1", topicId: "t1", scorePct: 88, maxMarks: 20, errorKind: "careless" }],
+    sessions: [{ id: "sess1", subjectId: "s1", date: "2026-05-10", minutes: 45, kind: "practice", topicIds: ["t1", "t2"] }],
+    rest: [{ id: "r1", date: "2026-05-09", hours: 7.5, bedtime: "22:30" }],
+    disruptions: [{ id: "d1", date: "2026-05-05", kind: "illness", days: 3, note: "flu" }],
+  };
+
+  it("round-trips all five slices, subject shape priors, profile, the polarity switch, and a sitting's hour", () => {
+    const res = parseImport(serializeExport(withSignals));
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.payload.topics).toEqual(withSignals.topics);
+    expect(res.payload.topicMarks).toEqual(withSignals.topicMarks);
+    expect(res.payload.sessions).toEqual(withSignals.sessions);
+    expect(res.payload.rest).toEqual(withSignals.rest);
+    expect(res.payload.disruptions).toEqual(withSignals.disruptions);
+    const s1 = res.payload.subjects.find((s) => s.id === "s1")!;
+    expect(s1.traits).toEqual({ cumulativeness: 0.8, determinism: 0.3, breadth: 0.5 });
+    expect(s1.mix).toEqual({ knowledge: 0.5, procedure: 0.25, skill: 0.25 });
+    expect(s1.belief).toBe(4);
+    expect(s1.attendancePct).toBe(92.3);
+    expect(res.payload.settings?.profile).toEqual({ chronotype: "owl", testAnxiety: 3 });
+    expect(res.payload.settings?.signalWeighting).toBe(false);
+    expect(res.payload.upcoming[0].hour).toBe(14);
+  });
+
+  it("emits the five new sections unconditionally, empty arrays included", () => {
+    const env = JSON.parse(serializeExport(book));
+    for (const key of ["topics", "topicMarks", "sessions", "rest", "disruptions"]) {
+      expect(env.data[key]).toEqual([]);
+    }
+  });
+
+  it("stamps v10", () => {
+    expect(EXPORT_VERSION).toBe(10);
+    expect(JSON.parse(serializeExport(book)).version).toBe(10);
+  });
+
+  it("signalWeighting: true or absent is not stored; only false round-trips", () => {
+    expect(sanitizeSettings({ ...freshSettings(), signalWeighting: true }).signalWeighting).toBeUndefined();
+    expect(sanitizeSettings(freshSettings()).signalWeighting).toBeUndefined();
+    expect(sanitizeSettings({ ...freshSettings(), signalWeighting: false }).signalWeighting).toBe(false);
+  });
+
+  it("drops a topicMark whose topic and entry disagree on subject", () => {
+    const dirty = {
+      ...book,
+      topics: [{ id: "t1", subjectId: "s1", name: "Algebra" }, { id: "t2", subjectId: "s2", name: "Grammar" }],
+      topicMarks: [
+        { id: "m1", entryId: "e1", topicId: "t1", scorePct: 80 }, // e1 is s1, t1 is s1 — kept
+        { id: "m2", entryId: "e1", topicId: "t2", scorePct: 80 }, // e1 is s1, t2 is s2 — dropped
+      ],
+    };
+    const res = parseImport(JSON.stringify({ app: "grade-exchange", version: 10, data: dirty }));
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.payload.topicMarks.map((m) => m.id)).toEqual(["m1"]);
+  });
+
+  it("drops a session for an unknown subject, and filters topicIds to that subject's own topics", () => {
+    const dirty = {
+      ...book,
+      topics: [{ id: "t1", subjectId: "s1", name: "Algebra" }, { id: "t2", subjectId: "s2", name: "Grammar" }],
+      sessions: [
+        { id: "sg", subjectId: "ghost", date: "2026-05-10", minutes: 30, kind: "reading" },
+        { id: "s1sess", subjectId: "s1", date: "2026-05-10", minutes: 30, kind: "reading", topicIds: ["t1", "t2", "nope"] },
+      ],
+    };
+    const res = parseImport(JSON.stringify({ app: "grade-exchange", version: 10, data: dirty }));
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.payload.sessions).toHaveLength(1);
+    expect(res.payload.sessions[0].id).toBe("s1sess");
+    expect(res.payload.sessions[0].topicIds).toEqual(["t1"]);
+  });
+
+  it("dedupes rest by date — the last row wins — and clamps hours to 14", () => {
+    const dirty = {
+      ...book,
+      rest: [
+        { id: "r1", date: "2026-05-09", hours: 6 },
+        { id: "r2", date: "2026-05-09", hours: 20 },
+      ],
+    };
+    const res = parseImport(JSON.stringify({ app: "grade-exchange", version: 10, data: dirty }));
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.payload.rest).toHaveLength(1);
+    expect(res.payload.rest[0].id).toBe("r2");
+    expect(res.payload.rest[0].hours).toBe(14);
+  });
+
+  it("clamps disruption days to 60", () => {
+    const dirty = { ...book, disruptions: [{ id: "d1", date: "2026-05-05", kind: "illness", days: 900 }] };
+    const res = parseImport(JSON.stringify({ app: "grade-exchange", version: 10, data: dirty }));
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.payload.disruptions[0].days).toBe(60);
+  });
+
+  it("renormalises a subject's mix to sum 1", () => {
+    const dirty = {
+      ...book,
+      subjects: [{ ...book.subjects[0], mix: { knowledge: 2, procedure: 1, skill: 1 } }, book.subjects[1]],
+    };
+    const res = parseImport(JSON.stringify({ app: "grade-exchange", version: 10, data: dirty }));
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.payload.subjects[0].mix).toEqual({ knowledge: 0.5, procedure: 0.25, skill: 0.25 });
+  });
+
+  it("filters a topic's prereqIds to same-subject topics, dropping self-reference and cross-subject entries", () => {
+    const dirty = {
+      ...book,
+      topics: [
+        { id: "t1", subjectId: "s1", name: "Algebra" },
+        { id: "t2", subjectId: "s2", name: "Grammar" },
+        { id: "t3", subjectId: "s1", name: "Calculus", prereqIds: ["t1", "t2", "t3"] },
+      ],
+    };
+    const res = parseImport(JSON.stringify({ app: "grade-exchange", version: 10, data: dirty }));
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const t3 = res.payload.topics.find((t) => t.id === "t3")!;
+    expect(t3.prereqIds).toEqual(["t1"]);
+  });
+
+  it("imports a v9 export cleanly, with every new slice absent", () => {
+    const v9 = JSON.stringify({
+      app: "grade-exchange", version: 9,
+      data: { ...book, upcoming: [], allocations: [], duels: [], meanCalls: [] },
+    });
+    const res = parseImport(v9);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.payload.topics).toEqual([]);
+    expect(res.payload.topicMarks).toEqual([]);
+    expect(res.payload.sessions).toEqual([]);
+    expect(res.payload.rest).toEqual([]);
+    expect(res.payload.disruptions).toEqual([]);
+    expect(res.payload.subjects).toEqual(book.subjects);
+    expect(res.payload.entries).toEqual(book.entries);
+  });
+
+  it("merge remaps topic/session subjectId and topicMark refs when a colliding desk is re-listed under a fresh id", () => {
+    const mine: AppData = {
+      subjects: [{ id: "s-math", name: "Mathematics", ticker: "MATH", color: "#4D7CFE", target: 90, courseworkPct: null }],
+      entries: [],
+      settings: freshSettings(),
+      sample: false,
+    };
+    const theirsBook: AppData = {
+      subjects: [{ id: "s-math", name: "Maths (Foundation)", ticker: "MTHF", color: "#E0662E", target: 55, courseworkPct: null }],
+      entries: [{ id: "t-e1", subjectId: "s-math", date: "2026-05-02", type: "Exam", score: 41, title: "" }],
+      settings: freshSettings(),
+      sample: false,
+      topics: [{ id: "t-top1", subjectId: "s-math", name: "Fractions" }],
+      sessions: [{ id: "t-sess1", subjectId: "s-math", date: "2026-05-01", minutes: 30, kind: "practice", topicIds: ["t-top1"] }],
+      topicMarks: [{ id: "t-mark1", entryId: "t-e1", topicId: "t-top1", scorePct: 70 }],
+    };
+    const incoming = parseImport(serializeExport(theirsBook));
+    if (!incoming.ok) throw new Error("fixture failed to parse");
+    expect(incoming.payload.topicMarks).toHaveLength(1); // sanity: the dual-FK check passed within their own book
+
+    const out = mergeData(mine, incoming.payload);
+    expect(out.subjects).toHaveLength(2);
+    const relisted = out.subjects.find((s) => s.id !== "s-math")!;
+    const topic = out.topics!.find((t) => t.name === "Fractions")!;
+    expect(topic.subjectId).toBe(relisted.id);
+    const session = out.sessions!.find((s) => s.kind === "practice")!;
+    expect(session.subjectId).toBe(relisted.id);
+    expect(session.topicIds).toEqual([topic.id]);
+    const entry = out.entries.find((e) => e.subjectId === relisted.id)!;
+    const mark = out.topicMarks!.find((m) => m.topicId === topic.id)!;
+    expect(mark.entryId).toBe(entry.id);
   });
 });

@@ -12,6 +12,38 @@ export type ReliabilityTag = "official" | "returned" | "remembered" | "estimated
 export type PeriodMode = "assessment" | "month" | "term" | "semester" | "year";
 export type GroupPeriod = Exclude<PeriodMode, "assessment">;
 
+/** What a logged study block was spent doing — which activities correlate with gains. */
+export type SessionKind = "recall" | "practice" | "reading" | "class" | "tutoring";
+
+/** The kind of mistake behind a lost mark — a TopicMark's own diagnosis. */
+export type ErrorKind = "careless" | "conceptual" | "procedural" | "time";
+
+/** What took a stretch of days off the normal routine. */
+export type DisruptionKind = "illness" | "family" | "event" | "other";
+
+/** Which end of the day the student runs strongest — self-reported once. */
+export type Chronotype = "lark" | "owl";
+
+/**
+ * Shape priors for how a subject's OWN material behaves, each 0–1 — not a
+ * reading on the student, a reading on the desk.
+ */
+export interface SubjectTraits {
+  /** How much a result depends on everything before it (a language vs a one-off unit). */
+  cumulativeness: number;
+  /** How mechanically gradable the material is (formula marking vs a judged essay). */
+  determinism: number;
+  /** How much of the syllabus a single assessment can cover. */
+  breadth: number;
+}
+
+/** What kind of work a subject actually tests — sums to 1. */
+export interface SubjectMix {
+  knowledge: number;
+  procedure: number;
+  skill: number;
+}
+
 export interface Subject {
   id: string;
   name: string;
@@ -33,6 +65,17 @@ export interface Subject {
    * contributes nothing to the grade — it is only a capability signal.
    */
   courseworkPct?: number | null;
+  /**
+   * Shape priors for how this subject's OWN material behaves — set once,
+   * rarely revisited. Not a reading on the student; a reading on the desk.
+   */
+  traits?: SubjectTraits | null;
+  /** What kind of work this subject actually tests, as a mix summing to 1. */
+  mix?: SubjectMix | null;
+  /** Self-rated confidence in current standing, 1 (worst) – 5 (best). */
+  belief?: number | null;
+  /** Attendance rate for this subject, 0–100%. */
+  attendancePct?: number | null;
 }
 
 export interface GradeEntry {
@@ -182,6 +225,23 @@ export interface Settings {
    * existed. Even on, the weight is earned, capped and jointly ceilinged.
    */
   aiWeighting?: boolean;
+  /**
+   * Whether the life-signals inputs (topics, study sessions, rest,
+   * disruptions) are priced into the mark at all — the switch on the LIFE
+   * SIGNALS card. Follows the other student-input switches' polarity: absent
+   * ⇒ ON, since a book with nothing logged is unaffected either way; `false`
+   * takes every signal out of every mark without deleting a single log.
+   */
+  signalWeighting?: boolean;
+  /** Person-level self-reported traits, not tied to any one subject. */
+  profile?: Profile | null;
+}
+
+/** Person-level self-reported traits — set once, not tied to any one subject. */
+export interface Profile {
+  chronotype?: Chronotype | null;
+  /** 1 (calm) – 5 (high anxiety) self-rating. */
+  testAnxiety?: number | null;
 }
 
 /**
@@ -283,6 +343,8 @@ export interface Upcoming {
   chips?: number[] | null;
   /** The wire's call on this sitting — AI-authored, read-only in the app. */
   aiPred?: AiPrediction | null;
+  /** Hour of day the paper starts, 0–23 — feeds chronotype-aware readiness. */
+  hour?: number | null;
 }
 
 /**
@@ -344,6 +406,69 @@ export interface MeanCall {
 }
 
 /**
+ * One syllabus topic within a subject — the unit the life signals below are
+ * actually measured against, finer than the subject itself.
+ */
+export interface Topic {
+  id: string;
+  subjectId: string;
+  name: string;
+  /** Share of assessed syllabus this topic carries, %; absent => equal weight. */
+  weightPct?: number | null;
+  /** Topics inside the SAME subject this one depends on — a prerequisite chain. */
+  prereqIds?: string[];
+}
+
+/**
+ * A per-topic breakdown of one GradeEntry's score — how a paper's marks split
+ * across syllabus topics, and optionally why marks were lost. Carries a dual
+ * foreign key (`entryId`, `topicId`): the sanitizer drops any row where the
+ * two disagree on subject, so a mark can never silently attach a topic from
+ * one desk to a paper sat on another.
+ */
+export interface TopicMark {
+  id: string;
+  entryId: string;
+  topicId: string;
+  /** 0–100 on this topic's share of that paper. */
+  scorePct: number;
+  maxMarks?: number | null;
+  errorKind?: ErrorKind | null;
+}
+
+/** One logged block of study time. */
+export interface StudySession {
+  id: string;
+  subjectId: string;
+  /** ISO date, YYYY-MM-DD. */
+  date: string;
+  minutes: number;
+  kind: SessionKind;
+  /** Topics this block covered, when the student can say. */
+  topicIds?: string[];
+}
+
+/** One night's sleep, self-logged. */
+export interface RestLog {
+  id: string;
+  /** ISO date, YYYY-MM-DD — the night this reading is FOR. */
+  date: string;
+  hours: number;
+  /** "HH:MM" as the sleep export states it. */
+  bedtime?: string | null;
+}
+
+/** A stretch of days that took the student off their normal routine. */
+export interface Disruption {
+  id: string;
+  date: string;
+  /** How many days it ran, from `date`. */
+  days?: number | null;
+  kind: DisruptionKind;
+  note?: string | null;
+}
+
+/**
  * The book: everything the student told the exchange, and nothing it computed.
  *
  * The forecast/bias register used to live here too. It does not any more — it is
@@ -365,6 +490,16 @@ export interface AppData {
   duels?: Duel[];
   /** Elicited aggregate calls: predicted overall average + forced ranking. */
   meanCalls?: MeanCall[];
+  /** Syllabus topics within each subject — the unit study and marks are tracked against. */
+  topics?: Topic[];
+  /** Per-topic breakdowns of graded results. */
+  topicMarks?: TopicMark[];
+  /** Logged study blocks. */
+  sessions?: StudySession[];
+  /** Logged nights of sleep. */
+  rest?: RestLog[];
+  /** Logged disruptions to the normal routine. */
+  disruptions?: Disruption[];
 }
 
 export interface Forecast {
