@@ -835,12 +835,8 @@ export function mergeData(current: AppData, payload: ImportPayload): AppData {
   // reached this loop, `entryRemap.get(m.entryId)` and `topicRemap.get(m.topicId)`
   // are defined together or absent together — never one without the other.
   // So a topicMark can never end up with one reference remapped (now pointing
-  // at the re-listed desk) and the other left on the original: the wire's
-  // deterministic `tm-<entryId>-<topicId>` id makes topic ids collide-proof
-  // across DIFFERENT subjects (the subject is baked into the topic's own
-  // `t-<ticker>-<slug>` id), and the remap logic above makes them collide-
-  // proof across a re-listed SAME subject too — the FK agreement this row
-  // was sanitized against survives the merge unchanged.
+  // at the re-listed desk) and the other left on the original: the FK
+  // agreement this row was sanitized against survives the merge unchanged.
   const topicMarkMap = new Map((current.topicMarks ?? []).map((m) => [m.id, m]));
   for (const m of payload.topicMarks) {
     const newEntryId = entryRemap.get(m.entryId);

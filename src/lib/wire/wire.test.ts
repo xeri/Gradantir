@@ -57,6 +57,12 @@ describe("the golden example", () => {
     // The example's wire call survives intact — range, basis and all.
     expect(res.payload.upcoming[0].aiPred?.point).toBe(77);
     expect(res.payload.upcoming[0].aiPred?.basis).toBeTruthy();
+    // T2's fields survive the real parser too — the doc comment's own claim.
+    expect(res.payload.subjects[0].traits).toEqual({ cumulativeness: 0.8, determinism: 0.6, breadth: 0.4 });
+    expect(res.payload.subjects[0].mix).toEqual({ knowledge: 0.3, procedure: 0.4, skill: 0.3 });
+    expect(res.payload.subjects[0].belief).toBe(4);
+    expect(res.payload.subjects[0].attendancePct).toBe(96);
+    expect(res.payload.upcoming[0].hour).toBe(9);
   });
   it("stamps the current prompt version", () => {
     expect(EXAMPLE_PAYLOAD.promptVersion).toBe(PROMPT_VERSION);
@@ -179,8 +185,17 @@ describe("the roster echo and the wording a weak model would obey", () => {
     expect(interviewOnly).toContain("⇒ sessions");
     expect(interviewOnly).toContain("⇒ rest");
     expect(interviewOnly).toContain("⇒ disruptions");
-    expect(interviewOnly).toContain("belief");
-    expect(interviewOnly).toContain("attendance");
+    // Asserting the INTERVIEW STEP's own wording, not just that "belief" and
+    // "attendancePct" appear somewhere in the prompt — schemaBlock renders
+    // every field name into every prompt regardless of interview content, so
+    // a bare substring check would pass even if step 8 never existed.
+    expect(interviewOnly).toContain("⇒ belief");
+    expect(interviewOnly).toContain("⇒ attendancePct");
+  });
+
+  it("interviews for a sitting's start time too, feeding Upcoming.hour", () => {
+    const interviewOnly = buildWirePrompt({ ...ALL, sources: { documents: false, interview: true } }, book, TODAY);
+    expect(interviewOnly).toContain("⇒ hour");
   });
 
   it("invites reasoning before the payload message, never inside it", () => {
@@ -231,13 +246,15 @@ describe("the five life-signal sections", () => {
     expect(interviewOnly).not.toContain("ASSIGNING SUBJECT TRAITS");
   });
 
-  it("the output contract lists all eleven data sections", () => {
+  it("the output contract's literal skeleton lists all eleven data sections", () => {
+    // Asserting the OUTPUT CONTRACT's own skeleton lines, not just that the
+    // section names appear anywhere in the prompt — exampleBlock's
+    // JSON.stringify(EXAMPLE_PAYLOAD) already emits every one of these
+    // strings regardless of whether outputContract() ever mentioned them.
     const prompt = buildWirePrompt(ALL, book, TODAY);
-    expect(prompt).toContain('"topics"');
-    expect(prompt).toContain('"topicMarks"');
-    expect(prompt).toContain('"sessions"');
-    expect(prompt).toContain('"rest"');
-    expect(prompt).toContain('"disruptions"');
+    expect(prompt).toContain('"topics": [...], "topicMarks": [...], "sessions": [...],');
+    expect(prompt).toContain('"rest": [...], "disruptions": [...]');
+    expect(prompt).toContain("All eleven data sections present");
   });
 });
 
@@ -456,6 +473,37 @@ describe("reviewWire", () => {
     expect(kept.disruptions.length).toBeGreaterThan(0);
   });
 
+  it("filterPayload cascades: excluding topics (or entries) drops topicMarks too, even when topicMarks itself is kept", () => {
+    // Important review finding: mergeData merges each section independently
+    // with no re-sanitize pass afterward (App.tsx merges straight into
+    // state; sanitizeBook only runs on load). Filing a topicMark whose
+    // topicId/entryId was excluded from the SAME merge would leave a
+    // dangling dual FK sitting in state unchecked.
+    const res = parseWire(JSON.stringify(EXAMPLE_PAYLOAD));
+    if (!res.ok) throw new Error("fixture failed");
+    const topicsExcluded = filterPayload(res.payload, { topics: false }, false);
+    expect(topicsExcluded.topicMarks).toEqual([]);
+    // topics itself still empties, as before.
+    expect(topicsExcluded.topics).toEqual([]);
+    const entriesExcluded = filterPayload(res.payload, { entries: false }, false);
+    expect(entriesExcluded.topicMarks).toEqual([]);
+    // Excluding neither keeps topicMarks.
+    const neitherExcluded = filterPayload(res.payload, {}, false);
+    expect(neitherExcluded.topicMarks.length).toBeGreaterThan(0);
+  });
+
+  it("filterPayload strips a session's dangling topicIds (not the whole session) when topics is excluded", () => {
+    const res = parseWire(JSON.stringify(EXAMPLE_PAYLOAD));
+    if (!res.ok) throw new Error("fixture failed");
+    expect(res.payload.sessions[0].topicIds?.length).toBeGreaterThan(0); // fixture sanity check
+    const filtered = filterPayload(res.payload, { topics: false }, false);
+    expect(filtered.sessions).toHaveLength(res.payload.sessions.length);
+    expect(filtered.sessions[0].topicIds).toBeUndefined();
+    // Kept intact when topics is not excluded.
+    const kept = filterPayload(res.payload, {}, false);
+    expect(kept.sessions[0].topicIds).toEqual(res.payload.sessions[0].topicIds);
+  });
+
   it("reviewWire covers the five life-signal sections — found/kept/added", () => {
     const res = parseWire(JSON.stringify(EXAMPLE_PAYLOAD));
     if (!res.ok) throw new Error("fixture failed");
@@ -500,5 +548,31 @@ describe("reviewWire", () => {
     const disruptions = review.sections.find((s) => s.key === "disruptions")!;
     expect(disruptions.dropped).toBe(1);
     expect(disruptions.reasons.join(" | ")).toContain("made-up-kind");
+  });
+
+  it("lintRow names the actual rule that drops a rest row: sanitizeRestList dedupes by DATE, not id", () => {
+    const dirty = {
+      ...EXAMPLE_PAYLOAD,
+      data: {
+        ...EXAMPLE_PAYLOAD.data,
+        rest: [
+          ...EXAMPLE_PAYLOAD.data.rest,
+          // Same date as the existing r-2026-05-13 row, otherwise well-formed —
+          // this is the ONE rest rule that actually drops a row (io.ts:527-533),
+          // and the generic "failed validation" fallback must not be all lintRow
+          // can say about it.
+          { id: "r-second-reading", date: "2026-05-13", hours: 8, bedtime: "22:10" },
+        ],
+      },
+    };
+    const res = parseWire(JSON.stringify(dirty));
+    if (!res.ok) throw new Error("fixture failed");
+    const review = reviewWire(res, current);
+    const rest = review.sections.find((s) => s.key === "rest")!;
+    expect(rest.found).toBe(2);
+    expect(rest.kept).toBe(1);
+    expect(rest.dropped).toBe(1);
+    expect(rest.reasons.join(" | ")).toContain("a second reading for 2026-05-13");
+    expect(rest.reasons.join(" | ")).not.toContain("failed validation");
   });
 });

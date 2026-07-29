@@ -54,6 +54,8 @@ interface LintCtx {
   entrySubjectOf: Map<string, string>;
   /** raw topic id -> its declared (unvalidated) subjectId. */
   topicSubjectOf: Map<string, string>;
+  /** date -> how many otherwise-well-formed raw `rest` rows claim it. */
+  restDateCounts: Map<string, number>;
 }
 
 /** One cheap, human-readable defect per raw row — the first that applies. */
@@ -121,11 +123,17 @@ function lintRow(key: WireSectionKey, raw: unknown, i: number, ctx: LintCtx): st
       if (!finite(raw.minutes)) return `${at}: minutes is not a number`;
       if (typeof raw.kind !== "string" || !SESSION_KINDS.has(raw.kind)) return `${at}: kind "${String(raw.kind)}" is not one of ${[...SESSION_KINDS].join("/")}`;
       return null;
-    case "rest":
+    case "rest": {
       if (typeof id !== "string" || !id) return `${at}: missing id`;
       if (typeof raw.date !== "string" || !ISO_DATE.test(raw.date)) return `${at}: date "${String(raw.date)}" is not YYYY-MM-DD`;
       if (!finite(raw.hours)) return `${at}: hours is not a number`;
+      // sanitizeRestList dedupes by DATE, not id (io.ts) — a second
+      // otherwise-valid reading for the same night is the actual rule that
+      // drops a rest row, so name that instead of falling through to the
+      // generic "failed validation" message.
+      if ((ctx.restDateCounts.get(raw.date) ?? 0) > 1) return `${at}: a second reading for ${raw.date} — one row per night`;
       return null;
+    }
     case "disruptions":
       if (typeof id !== "string" || !id) return `${at}: missing id`;
       if (typeof raw.date !== "string" || !ISO_DATE.test(raw.date)) return `${at}: date "${String(raw.date)}" is not YYYY-MM-DD`;
@@ -168,7 +176,19 @@ export function reviewWire(
   for (const t of raw.topics) {
     if (isRecord(t) && typeof t.id === "string" && typeof t.subjectId === "string") rawTopicSubjectOf.set(t.id, t.subjectId);
   }
-  const lintCtx: LintCtx = { subjectIds: rawSubjectIds, entrySubjectOf: rawEntrySubjectOf, topicSubjectOf: rawTopicSubjectOf };
+  // Counted with the SAME admission test `sanitizeRest` applies (id, date,
+  // hours all present/valid) — a row that would fail on its own merits never
+  // reaches `sanitizeRestList`'s date-dedup map, so it must not count here
+  // either, or a merely-malformed row could be mis-blamed on a "duplicate".
+  const restDateCounts = new Map<string, number>();
+  for (const r of raw.rest) {
+    if (isRecord(r) && typeof r.id === "string" && r.id && typeof r.date === "string" && ISO_DATE.test(r.date) && finite(r.hours)) {
+      restDateCounts.set(r.date, (restDateCounts.get(r.date) ?? 0) + 1);
+    }
+  }
+  const lintCtx: LintCtx = {
+    subjectIds: rawSubjectIds, entrySubjectOf: rawEntrySubjectOf, topicSubjectOf: rawTopicSubjectOf, restDateCounts,
+  };
 
   const sections = WIRE_SECTIONS.map((spec): SectionReview => {
     const rawRows = raw[spec.key];
@@ -271,6 +291,19 @@ export function filterPayload(
         return rest;
       })
     : [];
+  const topicsKept = keep("topics");
+  // A session's `topicIds` references topics the same way a topicMark does —
+  // excluding topics must strip the reference, not just the whole section,
+  // since `mergeData` merges sessions independently of topics and nothing
+  // re-sanitizes the merged book afterward (sanitizeBook runs only on load,
+  // storage.ts) — a stale topicId sitting in state would dangle silently.
+  const sessions = keep("sessions")
+    ? payload.sessions.map((s) => {
+        if (topicsKept || !s.topicIds) return s;
+        const { topicIds: _topicIds, ...rest } = s;
+        return rest;
+      })
+    : [];
   return {
     ...payload,
     entries: keep("entries") ? payload.entries : [],
@@ -281,9 +314,16 @@ export function filterPayload(
     // T2 minor: these five used to ride the `...payload` spread through
     // unconditionally — WireSectionKey had no keys for them, so an
     // excluded-section toggle could never actually reach them.
-    topics: keep("topics") ? payload.topics : [],
-    topicMarks: keep("topicMarks") ? payload.topicMarks : [],
-    sessions: keep("sessions") ? payload.sessions : [],
+    topics: topicsKept ? payload.topics : [],
+    // A topicMark's dual FK only holds when BOTH the entry and the topic it
+    // names are themselves being filed in this same merge — excluding
+    // `entries` or `topics` (or topicMarks itself) must drop every topicMark,
+    // because `mergeData` merges each section independently with no
+    // re-sanitize pass on the result: a topicMark surviving here with its
+    // entryId/topicId excluded would sit in state referencing a row this
+    // very merge chose not to add.
+    topicMarks: keep("entries") && topicsKept && keep("topicMarks") ? payload.topicMarks : [],
+    sessions,
     rest: keep("rest") ? payload.rest : [],
     disruptions: keep("disruptions") ? payload.disruptions : [],
   };
