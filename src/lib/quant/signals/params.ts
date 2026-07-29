@@ -132,3 +132,54 @@ export const TRAIT_SDMULT_CAP = 1.4;
 
 /** Points cap on the WHOLE signal-adjustment layer before the channel-credibility gate (../params.ts) scales it down — set near EFFORT_ACTUAL_W, the layer's closest sibling. After the gate the realized max is roughly ±1.4. */
 export const SIGNAL_ADJ_CAP = 4;
+
+/**
+ * VOI — the value-of-information ranker (voi.ts). Every constant below is a
+ * UX-facing "how much would logging this buy back" estimate for a
+ * DISPLAY-ONLY panel, not a fitted model term — each carries its own
+ * conservatism argument rather than a literature citation, the same
+ * dispensation pool.ts's Z90/SELF_DF precedent takes for its own display
+ * math. None of these feed stats.ts/aggregate.ts/the register.
+ */
+
+/** No rest logs at all, book-wide: the rest channel (REST_*) is entirely silent. A flat, modest estimate — well under REST_CHRONIC_CAP + REST_ACUTE_CAP, since an unlogged channel is a smaller certainty than a logged-but-poor one. */
+export const VOI_REST_GAIN = 1.5;
+/** Enough nights to clear REST_MIN_NIGHTS, a few seconds each. */
+export const VOI_REST_EFFORT = 10;
+
+/** No study sessions logged for a desk at all: the stock channel (STOCK_W's whole tanh-capped channel) is silent. */
+export const VOI_SESSIONS_GAIN = 2.0;
+/** A week of session logging, a couple of minutes per entry. */
+export const VOI_SESSIONS_EFFORT = 15;
+
+/** Interval-width (sd) at/above which a desk's forecast is loose enough that a topic breakdown is worth asking for — below this the desk is already tight and a breakdown buys little. */
+export const VOI_TOPICS_SD_MIN = 6;
+/** Per-point-of-sd coefficient on the "no topic breakdown yet, on a wide desk" gain — a coarse, conservative share of the desk's own current 90% half-width (sd · VOI_Z90) recoverable by adding structure. */
+export const VOI_TOPICS_GAIN_W = 0.15;
+export const VOI_TOPICS_EFFORT = 10;
+
+/** Per-point-of-sd coefficient on the "topics exist but under MASTERY_MIN_MARKS marked" gain, saturating at VOI_MARKS_SD_SAT — the mastery term (MASTERY_W) is the largest single measured channel, so an unpriced one is the most valuable single ask on the panel. */
+export const VOI_MARKS_GAIN_W = 3.0;
+/** sd at/above which the marks gain saturates at full weight — same order of magnitude as MASTERY_SCALE rather than a new invented scale. */
+export const VOI_MARKS_SD_SAT = 8;
+/** Minutes to mark one already-sat paper up against the syllabus topic list. */
+export const VOI_MARKS_EFFORT_PER = 5;
+
+/** Per-point-of-sd coefficient on the "traits unset" gain — smaller than VOI_TOPICS_GAIN_W because an unset trait only widens the INTERVAL (traitSdMult), it never moves the mean the way a priced topic breakdown's mastery term can. */
+export const VOI_TRAITS_GAIN_W = 0.2;
+/** A handful of self-rating sliders. */
+export const VOI_TRAITS_EFFORT = 2;
+
+/** No chronotype/anxiety profile at all, book-wide: a flat, small estimate — the profile-gated terms (ANX_W, CHRONO_W) are each capped small and only fire near a live sitting. */
+export const VOI_PROFILE_GAIN = 0.75;
+/** Two sliders. */
+export const VOI_PROFILE_EFFORT = 1;
+
+/** A coarse 90%-interval z-multiplier for this display-only ranker — NOT pool.ts's precise Z90 (1.6448536269514722): a VOI estimate is a rough "how much would this buy back" heuristic, not interval math that has to land exactly. */
+export const VOI_Z90 = 1.64;
+
+/** score = gainPts / (1 + effortMin / VOI_EFFORT_SCALE) — the ranking formula's own denominator (spec-literal, not fitted). */
+export const VOI_EFFORT_SCALE = 30;
+
+/** Only the top N asks are worth a single panel's attention. */
+export const VOI_TOP_N = 8;
