@@ -88,10 +88,11 @@ export interface SignalsProps {
   todayIso: string;
   onSetSignalWeighting: (on: boolean) => void;
   onOpenSubject?: (id: string) => void;
-  /** Quick-log intake (T16) — App.tsx assigns the id and the date/clock; this
-   *  view only ever hands it the values a student typed. */
-  onLogSession: (subjectId: string, minutes: number, kind: SessionKind, topicIds: string[]) => void;
-  onLogRest: (hours: number, bedtime: string | null) => void;
+  /** Quick-log intake (T16) — App.tsx assigns the id (`uid()`); every date is
+   *  a value the student chose in the panel (defaulted, but editable), never
+   *  a live clock read here or in App.tsx's handlers. */
+  onLogSession: (subjectId: string, date: string, minutes: number, kind: SessionKind, topicIds: string[]) => void;
+  onLogRest: (date: string, hours: number, bedtime: string | null) => void;
   onLogDisruption: (date: string, kind: DisruptionKind, days: number | null, note: string | null) => void;
 }
 

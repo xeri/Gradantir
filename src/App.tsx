@@ -520,26 +520,26 @@ export default function App() {
   const saveMeanCall = (rKey: string, predAvg: number, ranking: string[]) =>
     update({ meanCalls: [...(data.meanCalls ?? []), { id: uid(), roundKey: rKey, predAvg, ranking, createdAt: todayStr() }] });
   /* THE QUICK-LOG PANELS (§D5, T16). Three discrete events, file-on-submit —
-     the panel hands back only the values a student typed; the id and the
-     "now" that land on the row are struck here, the one place a live clock
-     is allowed. Study session and rest are dated TODAY (logging one is an
-     act about today, never a day picked in the UI); disruption's date is a
-     genuine student choice (a flu logged after the fact), so it travels
-     through untouched. */
-  const logSession = (subjectId: string, minutes: number, kind: SessionKind, topicIds: string[]) => {
+     the panel hands back only the values a student typed or picked; the id
+     is struck here, the one place `uid()` is allowed. Every date below is a
+     value the STUDENT chose in the panel (each defaults to today, or to
+     last night for rest — see LogPanels.tsx's own doc comment for why —
+     but is always editable), never `todayStr()` read fresh in this handler:
+     a backfilled session or a delayed rest log must file under the day it
+     actually describes, not the day it was typed. */
+  const logSession = (subjectId: string, date: string, minutes: number, kind: SessionKind, topicIds: string[]) => {
     const session: StudySession = {
-      id: uid(), subjectId, date: todayStr(), minutes, kind,
+      id: uid(), subjectId, date, minutes, kind,
       ...(topicIds.length ? { topicIds } : {}),
     };
     update({ sessions: [...(data.sessions ?? []), session] });
   };
   /* Rest is DEDUPED BY DATE (io.ts's own sanitizer convention, mirrored here
      so the same-night replace is true within a session too, not just after
-     the next reload's re-sanitize): a same-day resubmit replaces the
-     existing row outright rather than appending a second reading for one
-     night. */
-  const logRest = (hours: number, bedtime: string | null) => {
-    const date = todayStr();
+     the next reload's re-sanitize): a resubmit for the same night replaces
+     the existing row outright rather than appending a second reading for
+     one night. */
+  const logRest = (date: string, hours: number, bedtime: string | null) => {
     const rest: RestLog = { id: uid(), date, hours, ...(bedtime ? { bedtime } : {}) };
     update({ rest: [...(data.rest ?? []).filter((r) => r.date !== date), rest] });
   };

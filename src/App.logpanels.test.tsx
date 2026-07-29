@@ -4,7 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import App from "./App";
 import { STORE_KEY, freshSettings } from "./constants";
-import { todayStr } from "./lib/utils";
+import { addDays, todayStr } from "./lib/utils";
 import type { AppData } from "./types";
 
 /**
@@ -13,10 +13,13 @@ import type { AppData } from "./types";
  *
  * The load-bearing claim: filing ONE quick-log event writes exactly ONE row
  * to its own slice and leaves every other slice of the book byte-identical
- * — no cross-slice churn, no id/date generated anywhere but App.tsx (the
- * panels never call `uid()` or read the clock). Rest additionally proves the
- * dedupe-by-date REPLACE rule: a second submit for the same night overwrites
- * the first row rather than appending a second.
+ * — no cross-slice churn, no id generated anywhere but App.tsx (the panels
+ * never call `uid()`). Rest additionally proves the dedupe-by-date REPLACE
+ * rule (a second submit for the same night overwrites the first row rather
+ * than appending a second) AND that its date defaults to LAST NIGHT
+ * (`todayStr() - 1`), not today — RestLog's own convention (`date` is "the
+ * night the reading is FOR"), which the panel's default has to honour or
+ * `rest.ts`'s acute short-sleep term silently never fires.
  */
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -126,6 +129,7 @@ describe("App wires the quick-log panels to the persisted book", () => {
     click(button(/Log rest/i));
     expect(stored().rest).toHaveLength(1);
     expect(stored().rest![0].hours).toBe(7);
+    expect(stored().rest![0].date).toBe(addDays(todayStr(), -1));
     const firstId = stored().rest![0].id;
 
     setValue(label("hours slept"), "4.5");
@@ -134,7 +138,7 @@ describe("App wires the quick-log panels to the persisted book", () => {
     const after = stored();
     expect(after.rest).toHaveLength(1);
     expect(after.rest![0].hours).toBe(4.5);
-    expect(after.rest![0].date).toBe(todayStr());
+    expect(after.rest![0].date).toBe(addDays(todayStr(), -1));
     // Replaced, not merely mutated in place by chance: touches no other slice.
     expect(after.sessions ?? []).toEqual([]);
     expect(after.disruptions ?? []).toEqual([]);

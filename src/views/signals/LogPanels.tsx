@@ -4,7 +4,7 @@ import { C, FONT, microLabel } from "../../theme";
 import { Panel } from "../../components/ui/Panel";
 import { Btn } from "../../components/ui/Btn";
 import { Field, inputCls, inputStyle } from "../../components/ui/Field";
-import { round1 } from "../../lib/utils";
+import { addDays, round1 } from "../../lib/utils";
 import type { DisruptionKind, SessionKind, Subject, Topic } from "../../types";
 
 /**
@@ -15,21 +15,31 @@ import type { DisruptionKind, SessionKind, Subject, Topic } from "../../types";
  *
  * DISCRETE EVENTS, FILE-ON-SUBMIT — the opposite discipline from a slider:
  * nothing here writes per keystroke, and one submit is exactly one call to
- * its own `onLog*` prop. The id and the "now" that go on the eventual book
- * row are App.tsx's alone (`uid()` / the real clock never appear here) — a
- * panel hands back only the VALUES a student typed. `todayIso` is the one
- * exception, and only as a SEED: it is a value already captured by App off
- * its own clock, threaded down to default the disruption date input so a
- * same-day disruption needs no typing; the panel never reads a live clock
- * itself and the seeded value is freely overridable (a disruption is often
- * logged days after it started).
+ * its own `onLog*` prop. The id is App.tsx's alone (`uid()` never appears
+ * here) — a panel hands back only the VALUES a student typed or picked.
+ * `todayIso` is a value already captured by App off its own clock, threaded
+ * down only to SEED a date input's default; the panel never reads a live
+ * clock itself, and every seeded value is freely overridable.
  *
- * Study session and rest night carry no date input at all — logging one is
- * an act about TODAY (this study block, last night's sleep), so App dates
- * both `todayStr()` and there is nothing to ask. Rest is additionally
- * deduped by date one level up (App.tsx replaces same-day rows outright,
- * per io.ts's sanitizer convention) — the copy under the rest form says so,
- * rather than letting a second same-day log silently look like two nights.
+ * REST'S DATE IS THE NIGHT THE READING IS FOR — not the morning it is typed.
+ * This is `RestLog`'s own documented convention (types.ts), the one
+ * `rest.ts`'s acute term relies on (a night-before-exam row is looked up at
+ * `examDate - 1`, never `examDate`), and the one the wire's intake prompt
+ * states verbatim. The realistic use of this panel is RETROSPECTIVE — a
+ * student wakes and logs last night — so the date input defaults to
+ * `todayIso - 1`, not `todayIso`: dating it "today" would silently file the
+ * reading one day late and the acute short-sleep charge would never fire for
+ * the single most valuable use of the panel. The field is a real, visible,
+ * editable date rather than an implicit stamp, because a student backfilling
+ * two nights ago (or logging an afternoon nap) needs to see and change it.
+ * Rest is additionally deduped by date one level up (App.tsx replaces a
+ * same-night row outright, per io.ts's sanitizer convention) — the copy
+ * under the form names the night it is filing for and says so.
+ *
+ * Study session defaults its date to `todayIso` (logging one is usually an
+ * act about today) but is equally editable, for the same backfill reason.
+ * Disruption's date is a genuine student choice from the start — it is
+ * often logged days after the disruption began.
  *
  * UI bounds mirror io.ts's sanitizer clamps (session minutes 1-600, rest
  * hours 0-14, disruption days 1-60) so an out-of-range value is refused with
@@ -56,10 +66,10 @@ export interface LogPanelsProps {
   subjects: Subject[];
   /** Every live topic, across every subject — filtered to the chosen subject inside. */
   topics: Topic[];
-  /** App's own captured "now" — seeds the disruption date input only. */
+  /** App's own captured "now" — seeds every panel's date input only. */
   todayIso: string;
-  onLogSession: (subjectId: string, minutes: number, kind: SessionKind, topicIds: string[]) => void;
-  onLogRest: (hours: number, bedtime: string | null) => void;
+  onLogSession: (subjectId: string, date: string, minutes: number, kind: SessionKind, topicIds: string[]) => void;
+  onLogRest: (date: string, hours: number, bedtime: string | null) => void;
   onLogDisruption: (date: string, kind: DisruptionKind, days: number | null, note: string | null) => void;
 }
 
@@ -67,13 +77,15 @@ const errStyle = { color: C.down } as const;
 const hintStyle = { color: C.faint, fontFamily: FONT.mono } as const;
 
 function SessionPanel({
-  subjects, topics, onLog,
+  subjects, topics, todayIso, onLog,
 }: {
   subjects: Subject[];
   topics: Topic[];
-  onLog: (subjectId: string, minutes: number, kind: SessionKind, topicIds: string[]) => void;
+  todayIso: string;
+  onLog: (subjectId: string, date: string, minutes: number, kind: SessionKind, topicIds: string[]) => void;
 }) {
   const [subjectId, setSubjectId] = useState(subjects[0]?.id ?? "");
+  const [date, setDate] = useState(todayIso);
   const [minutes, setMinutes] = useState("");
   const [kind, setKind] = useState<SessionKind>("practice");
   const [topicIds, setTopicIds] = useState<string[]>([]);
@@ -94,12 +106,13 @@ function SessionPanel({
   }
 
   const submit = () => {
+    if (!date) { setErr("Pick a date."); return; }
     const n = Number(minutes);
     if (minutes === "" || !Number.isFinite(n) || n < 1 || n > 600) {
       setErr("Minutes run from 1 to 600.");
       return;
     }
-    onLog(subjectId, Math.round(n), kind, topicIds);
+    onLog(subjectId, date, Math.round(n), kind, topicIds);
     setMinutes("");
     setTopicIds([]);
     setErr("");
@@ -108,16 +121,24 @@ function SessionPanel({
   return (
     <Panel title="LOG STUDY SESSION">
       <div className="space-y-3">
-        <Field label="SUBJECT">
-          <select
-            className={inputCls + " cursor-pointer font-semibold"}
-            style={inputStyle}
-            value={subjectId}
-            onChange={(e) => { setSubjectId(e.target.value); setTopicIds([]); }}
-          >
-            {subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="SUBJECT">
+            <select
+              className={inputCls + " cursor-pointer font-semibold"}
+              style={inputStyle}
+              value={subjectId}
+              onChange={(e) => { setSubjectId(e.target.value); setTopicIds([]); }}
+            >
+              {subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </Field>
+          <Field label="DATE">
+            <input
+              className={inputCls} style={inputStyle} type="date"
+              value={date} onChange={(e) => setDate(e.target.value)} aria-label="Session date"
+            />
+          </Field>
+        </div>
         <div className="grid grid-cols-2 gap-3">
           <Field label="MINUTES">
             <input
@@ -168,18 +189,28 @@ function SessionPanel({
   );
 }
 
-function RestPanel({ onLog }: { onLog: (hours: number, bedtime: string | null) => void }) {
+function RestPanel({
+  todayIso, onLog,
+}: {
+  todayIso: string;
+  onLog: (date: string, hours: number, bedtime: string | null) => void;
+}) {
+  /* Defaults to LAST NIGHT, not today: this panel's realistic use is a
+     student waking up and logging the night that just ended, and RestLog's
+     date is "the night the reading is FOR" — see the file doc comment. */
+  const [date, setDate] = useState(addDays(todayIso, -1));
   const [hours, setHours] = useState("");
   const [bedtime, setBedtime] = useState("");
   const [err, setErr] = useState("");
 
   const submit = () => {
+    if (!date) { setErr("Pick the night this reading is for."); return; }
     const n = Number(hours);
     if (hours === "" || !Number.isFinite(n) || n < 0 || n > 14) {
       setErr("Hours run from 0 to 14.");
       return;
     }
-    onLog(round1(n), bedtime || null);
+    onLog(date, round1(n), bedtime || null);
     setHours("");
     setBedtime("");
     setErr("");
@@ -188,11 +219,17 @@ function RestPanel({ onLog }: { onLog: (hours: number, bedtime: string | null) =
   return (
     <Panel title="LOG REST NIGHT">
       <div className="space-y-3">
+        <Field label="FOR THE NIGHT OF">
+          <input
+            className={inputCls} style={inputStyle} type="date"
+            value={date} onChange={(e) => setDate(e.target.value)} aria-label="The night this reading is for" autoFocus
+          />
+        </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="HOURS SLEPT">
             <input
               className={inputCls} style={inputStyle} type="number" min={0} max={14} step={0.25}
-              value={hours} onChange={(e) => setHours(e.target.value)} placeholder="7.5" autoFocus
+              value={hours} onChange={(e) => setHours(e.target.value)} placeholder="7.5"
             />
           </Field>
           <Field label="BEDTIME (OPT)">
@@ -203,7 +240,7 @@ function RestPanel({ onLog }: { onLog: (hours: number, bedtime: string | null) =
           </Field>
         </div>
         <p className="text-[10px] uppercase tracking-wider leading-relaxed" style={hintStyle}>
-          DATED TODAY — LOGGING AGAIN TODAY REPLACES THIS READING RATHER THAN ADDING A SECOND NIGHT.
+          {date ? `FILING FOR THE NIGHT OF ${date}` : "PICK A NIGHT"} — RE-FILING THE SAME NIGHT REPLACES IT, NOT A SECOND READING.
         </p>
         {err && <p className="text-xs font-semibold" style={errStyle}>{err}</p>}
         <Btn variant="primary" onClick={submit} className="w-full justify-center">Log rest</Btn>
@@ -303,10 +340,12 @@ export function LogPanels({ subjects, topics, todayIso, onLogSession, onLogRest,
         <SessionPanel
           subjects={subjects}
           topics={topics}
-          onLog={(subjectId, minutes, kind, topicIds) => { onLogSession(subjectId, minutes, kind, topicIds); setFlash("SESSION LOGGED"); }}
+          todayIso={todayIso}
+          onLog={(subjectId, date, minutes, kind, topicIds) => { onLogSession(subjectId, date, minutes, kind, topicIds); setFlash("SESSION LOGGED"); }}
         />
         <RestPanel
-          onLog={(hours, bedtime) => { onLogRest(hours, bedtime); setFlash("REST LOGGED"); }}
+          todayIso={todayIso}
+          onLog={(date, hours, bedtime) => { onLogRest(date, hours, bedtime); setFlash("REST LOGGED"); }}
         />
         <DisruptionPanel
           todayIso={todayIso}
