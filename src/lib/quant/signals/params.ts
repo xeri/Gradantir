@@ -156,6 +156,7 @@ export const VOI_SESSIONS_EFFORT = 15;
 export const VOI_TOPICS_SD_MIN = 6;
 /** Per-point-of-sd coefficient on the "no topic breakdown yet, on a wide desk" gain — a coarse, conservative share of the desk's own current 90% half-width (sd · VOI_Z90) recoverable by adding structure. */
 export const VOI_TOPICS_GAIN_W = 0.15;
+/** Minutes to sketch a topic breakdown for one desk. */
 export const VOI_TOPICS_EFFORT = 10;
 
 /** Per-point-of-sd coefficient on the "topics exist but under MASTERY_MIN_MARKS marked" gain, saturating at VOI_MARKS_SD_SAT — the mastery term (MASTERY_W) is the largest single measured channel, so an unpriced one is the most valuable single ask on the panel. */

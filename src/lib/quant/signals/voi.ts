@@ -41,7 +41,9 @@ import type { SignalBook } from "./signalread";
  * sd-dependent heuristics (topics, marks, traits) simply do not fire for a
  * desk they have no width for, rather than guessing one — only the flat,
  * width-independent heuristics (rest, sessions, profile) can still fire on
- * such a desk.
+ * such a desk. A desk explicitly mapped to sd === 0 is treated the same way
+ * (marks/traits skip it too) since there is no interval left to tighten —
+ * see the inline comments at each sd > 0 gate.
  *
  * `todayIso` is accepted per the module's spec but unused: every heuristic
  * here is a presence/absence/size test, not a recency one (unlike, say,
@@ -147,8 +149,10 @@ export function valueOfInformation(
           ),
         );
       }
-    } else if (sd != null) {
+    } else if (sd != null && sd > 0) {
       // MARKS — topics exist but fewer than MASTERY_MIN_MARKS are marked yet.
+      // sd > 0 (not just != null): a desk at sd === 0 has no interval left to
+      // tighten, so a zero-gain "±0.0" item would be a worthless recommendation.
       const topicIds = new Set(subjTopics.map((t) => t.id));
       const marks = book.topicMarks.filter((mk) => topicIds.has(mk.topicId)).length;
       if (marks < MASTERY_MIN_MARKS) {
@@ -167,7 +171,9 @@ export function valueOfInformation(
     }
 
     // TRAITS — subject traits (cumulativeness/determinism/breadth) never set.
-    if (sub.traits == null && sd != null) {
+    // sd > 0 for the same reason as the MARKS gate above: sd === 0 leaves
+    // nothing for "interval honesty" to widen back in.
+    if (sub.traits == null && sd != null && sd > 0) {
       items.push(
         voiItem(
           sub.id,

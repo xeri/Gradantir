@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Profile, RestLog, StudySession, Subject, Topic, TopicMark } from "../../../types";
-import { MASTERY_MIN_MARKS, REST_MIN_NIGHTS, VOI_EFFORT_SCALE, VOI_MARKS_EFFORT_PER, VOI_TOP_N } from "./params";
+import { MASTERY_MIN_MARKS, REST_MIN_NIGHTS, VOI_EFFORT_SCALE, VOI_TOP_N } from "./params";
 import { emptySignalBook, type SignalBook } from "./signalread";
 import { valueOfInformation } from "./voi";
 
@@ -221,7 +221,7 @@ describe("valueOfInformation — the 'marks' heuristic (topics exist, under MAST
     expect(it.subjectId).toBe("s1");
     expect(it.ticker).toBe("S1");
     const needed = MASTERY_MIN_MARKS - 1;
-    expect(it.effortMin).toBe(VOI_MARKS_EFFORT_PER * needed);
+    expect(it.effortMin).toBe(5 * needed); // spec literal, hardcoded so constant drift is caught
     const expectedGain = Math.round(3.0 * Math.min(1, SD / 8) * 100) / 100;
     expect(it.gainPts).toBeCloseTo(expectedGain, 6);
     expect(it.score).toBeCloseTo(expectedGain / (1 + it.effortMin / VOI_EFFORT_SCALE), 6);
@@ -238,6 +238,36 @@ describe("valueOfInformation — the 'marks' heuristic (topics exist, under MAST
       topicMarks: [mark("m1", "t1"), mark("m2", "t2"), mark("m3", "t3")],
     };
     const desks = new Map<string, number | null>([["s1", 8]]);
+    expect(valueOfInformation(subjects, book, desks, TODAY)).toEqual([]);
+  });
+
+  it("a desk explicitly mapped to sd === 0 does not emit a zero-gain marks item", () => {
+    const subjects = [sub("s1", { traits: { cumulativeness: 0.5, determinism: 0.5, breadth: 0.5 } })];
+    const book: SignalBook = {
+      ...emptySignalBook,
+      rest: [rest("2026-07-01")],
+      profile: PROFILE_SET,
+      sessions: [session("s1", "2026-07-01")],
+      topics: [topic("t1", "s1"), topic("t2", "s1"), topic("t3", "s1")],
+      topicMarks: [mark("m1", "t1")], // < MASTERY_MIN_MARKS, would otherwise fire
+    };
+    const desks = new Map<string, number | null>([["s1", 0]]);
+    expect(valueOfInformation(subjects, book, desks, TODAY)).toEqual([]);
+  });
+});
+
+describe("valueOfInformation — a desk explicitly mapped to sd === 0 skips the traits heuristic too", () => {
+  it("does not emit a zero-gain traits item", () => {
+    const subjects = [sub("s1")]; // traits unset, would otherwise fire
+    const book: SignalBook = {
+      ...emptySignalBook,
+      rest: [rest("2026-07-01")],
+      profile: PROFILE_SET,
+      sessions: [session("s1", "2026-07-01")],
+      topics: [topic("t1", "s1"), topic("t2", "s1"), topic("t3", "s1")],
+      topicMarks: [mark("m1", "t1"), mark("m2", "t2"), mark("m3", "t3")],
+    };
+    const desks = new Map<string, number | null>([["s1", 0]]);
     expect(valueOfInformation(subjects, book, desks, TODAY)).toEqual([]);
   });
 });
