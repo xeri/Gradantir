@@ -155,16 +155,32 @@ describe("studyStock — baseline gating", () => {
 });
 
 describe("studyStock — deviation property", () => {
-  it("identical daily 60-min recall logging prices as roughly flat: |term| < 0.25 (well under STOCK_W)", () => {
+  it.each<[string, SubjectMix | null]>([
+    ["knowledge (H=14)", { knowledge: 1, procedure: 0, skill: 0 }],
+    ["default mix (H=45, null)", null],
+    ["skill (H=120)", { knowledge: 0, procedure: 0, skill: 1 }],
+  ])("identical daily 60-min recall logging prices as flat under %s: |term| < 0.01", (_label, mix) => {
     const sessions: StudySession[] = [];
     for (let i = 0; i < 70; i++) {
       sessions.push(S({ id: "d" + i, kind: "recall", minutes: 60, date: addDays(ASOF, -i) }));
     }
-    const out = studyStock(sessions, [], null, ASOF);
+    const out = studyStock(sessions, [], mix, ASOF);
     expect(out.baseline).not.toBeNull();
-    expect(Math.abs(out.term)).toBeLessThan(0.25);
-    // not exactly zero — decay tilts the (undecayed) baseline window against the decayed k14 window.
-    expect(out.term).not.toBe(0);
+    // baseline is now projected into k14's own decayed-window units (×D(H), not a flat ×14),
+    // so a truly steady daily habit sits at steady state regardless of half-life.
+    expect(Math.abs(out.term)).toBeLessThan(0.01);
+  });
+});
+
+describe("studyStock — k14 window boundary", () => {
+  it("a lone session at exactly Δ=14 days contributes nothing to k14 (the excluded edge)", () => {
+    const out = studyStock([S({ kind: "recall", minutes: 60, date: addDays(ASOF, -14) })], [], null, ASOF);
+    expect(out.k14).toBe(0);
+  });
+
+  it("a lone session at exactly Δ=13 days IS inside k14 (the included edge)", () => {
+    const out = studyStock([S({ kind: "recall", minutes: 60, date: addDays(ASOF, -13) })], [], null, ASOF);
+    expect(out.k14).toBeGreaterThan(0);
   });
 });
 

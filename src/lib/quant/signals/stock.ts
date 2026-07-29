@@ -9,20 +9,28 @@ import { ENCODING_PENALTY, QUALITY, SHORT_SLEEP_H, SPACING_RECENT, SPACING_SAME_
  * against its own baseline rate. Pure and clock-free — `asOf` is always
  * passed in, never read off a live clock.
  *
- * k14 is a DECAYED stock (each session's contribution fades from the day it
+ * k14 is a DECAYED stock: each session's contribution fades from the day it
  * was logged toward asOf, half-life set by the subject's own knowledge/
- * procedure/skill mix). baseline is deliberately UNDECAYED — a flat per-day
- * rate over the 42 days before that, scaled to the same 14-day units — so
- * constant logging does not price as an exact identity: decay tilts k14
- * slightly below a truly flat baseline, and that tilt is itself the honest
- * signal that "banked stock fades" even when the logging habit has not
- * changed. See stock.test.ts's deviation-property test for the bound.
+ * procedure/skill mix. baseline is the SAME 42-day-prior per-day rate,
+ * projected into those same decayed-14-day-window units — multiplied by
+ * D(H) = Σ_{d=0}^{13} exp(−ln2·d/H), the exact weight a steady daily habit
+ * would carry inside the k14 window at that half-life, not a flat ×14. A
+ * flat ×14 would compare a decayed number against an undecayed one and
+ * read every desk as running cold under a perfectly steady habit (worse at
+ * short half-lives, where decay bites hardest); projecting the baseline
+ * through the same decay kernel makes k14 ≈ baseline — and term ≈ 0 — at
+ * steady state, for any half-life. See stock.test.ts's deviation-property
+ * test, parameterised across the knowledge/default/skill half-lives.
  */
 
 export interface StockRead {
   /** Effective minutes, decayed, trailing 14 days ending asOf. */
   k14: number;
-  /** Per-day mean over days 15-56 before asOf, undecayed, ×14; null when unmeasurable. */
+  /**
+   * Per-day mean over days 15-56 before asOf, projected into the same
+   * decayed-14-day-window units as k14 (×D(H), not a flat ×14); null when
+   * unmeasurable.
+   */
   baseline: number | null;
   /** The priced deviation term, points. */
   term: number;
@@ -35,6 +43,18 @@ export interface StockRead {
 const DAY_MS = 86400000;
 const daysBetween = (from: string, to: string): number => Math.round((pDate(to).getTime() - pDate(from).getTime()) / DAY_MS);
 const round2 = (v: number) => Math.round(v * 100) / 100;
+
+/**
+ * D(H) = Σ_{d=0}^{13} exp(−ln2·d/H): the exact decayed-window weight a
+ * steady one-unit-per-day habit would carry inside the k14 window at half-
+ * life H. Projects the (undecayed) baseline per-day rate into k14's own
+ * units so the two are directly comparable — see the module doc comment.
+ */
+const decayWindowWeight = (H: number): number => {
+  let s = 0;
+  for (let d = 0; d < 14; d++) s += Math.exp((-Math.LN2 * d) / H);
+  return s;
+};
 
 const IDENTITY: StockRead = { k14: 0, baseline: null, term: 0, recallRatio: null, hoursPerWeek: null };
 
@@ -75,7 +95,7 @@ export function studyStock(
     }
   }
   const spanDays = daysBetween(sorted[0].date, asOf);
-  const baseline = spanDays >= 28 && baselineCount >= 3 ? (baselineSum / 42) * 14 : null;
+  const baseline = spanDays >= 28 && baselineCount >= 3 ? (baselineSum / 42) * decayWindowWeight(H) : null;
 
   const term = baseline == null ? 0 : STOCK_W * Math.tanh((k14 - baseline) / Math.max(baseline, STOCK_FLOOR));
 
