@@ -319,11 +319,11 @@ export const TOPIC_MARK_FIELDS = {
   },
   entryId: {
     label: "entry id", required: true,
-    constraint: "must be an id present in this payload's (or the book's) `entries` — the RESULT this breakdown belongs to. An entry not already on the tape drops the row: a mark is never evidence for a paper the book cannot show.",
+    constraint: "must be an id present in THIS SAME payload's `entries` — the RESULT this breakdown belongs to. The dual FK below only resolves within one payload, never against the book, so an entry that is already on the book but not re-emitted HERE still drops the row: re-echo it (its existing id — this is idempotent, not a duplicate) alongside its topicMarks.",
   },
   topicId: {
     label: "topic id", required: true,
-    constraint: "must be an id present in this payload's (or the book's) `topics`, AND that topic's subject must match the entry's subject — a mismatch drops the row (the dual foreign key).",
+    constraint: "must be an id present in THIS SAME payload's `topics` (same rule as entryId — re-emit an existing topic row here too), AND that topic's subject must match the entry's subject — a mismatch drops the row (the dual foreign key).",
   },
   scorePct: {
     label: "score on this topic %", required: true,
