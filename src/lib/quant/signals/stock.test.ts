@@ -92,22 +92,36 @@ describe("studyStock — spacing multiplier by hand-value", () => {
 });
 
 describe("studyStock — encoding multiplier by hand-value", () => {
-  it("a session on a night logged under SHORT_SLEEP_H encodes at ENCODING_PENALTY", () => {
+  /* A2 review finding: the sleep that impairs encoding on study-day D is the
+   * night ENDING the morning of D — logged, per RestLog's own convention
+   * (types.ts, rest.ts's module doc comment) and rest.ts's own acuteTerm
+   * lookup (`examDate - 1`), under date D-1, never under D itself. The old
+   * same-date fixture below locked in the wrong (forward-looking) lookup. */
+  it("a session encodes at ENCODING_PENALTY when the NIGHT BEFORE the study date ran short", () => {
     const date = ASOF;
-    const out = studyStock([S({ kind: "practice", minutes: 100, date })], [R(date, 5.0)], null, ASOF);
+    const nightBefore = addDays(date, -1);
+    const out = studyStock([S({ kind: "practice", minutes: 100, date })], [R(nightBefore, 5.0)], null, ASOF);
     const expected = round1(100 * QUALITY.practice * SPACING_STALE * ENCODING_PENALTY);
     expect(out.k14).toBeCloseTo(expected, 5);
   });
 
-  it("a night logged at or above SHORT_SLEEP_H encodes at full credit", () => {
+  it("negative control: a short night dated the SAME as the study date does NOT dock — that row is for the night AFTER, not before", () => {
     const date = ASOF;
-    const out = studyStock([S({ kind: "practice", minutes: 100, date })], [R(date, 6.5)], null, ASOF);
+    const out = studyStock([S({ kind: "practice", minutes: 100, date })], [R(date, 5.0)], null, ASOF);
+    const expected = round1(100 * QUALITY.practice * SPACING_STALE * 1);
+    expect(out.k14).toBeCloseTo(expected, 5);
+  });
+
+  it("a night-before logged at or above SHORT_SLEEP_H encodes at full credit", () => {
+    const date = ASOF;
+    const nightBefore = addDays(date, -1);
+    const out = studyStock([S({ kind: "practice", minutes: 100, date })], [R(nightBefore, 6.5)], null, ASOF);
     const expected = round1(100 * QUALITY.practice * SPACING_STALE * 1);
     expect(out.k14).toBeCloseTo(expected, 5);
     expect(SHORT_SLEEP_H).toBeLessThanOrEqual(6.5);
   });
 
-  it("no rest row logged for the date encodes at full credit", () => {
+  it("no rest row logged for the night before encodes at full credit", () => {
     const date = ASOF;
     const out = studyStock([S({ kind: "practice", minutes: 100, date })], [], null, ASOF);
     const expected = round1(100 * QUALITY.practice * SPACING_STALE * 1);
@@ -170,6 +184,34 @@ describe("studyStock — deviation property", () => {
     // so a truly steady daily habit sits at steady state regardless of half-life.
     expect(Math.abs(out.term)).toBeLessThan(0.01);
   });
+
+  /* A1 review finding: `baseline` accumulated only over days PRESENT in the
+   * 14-55d window but always divided by a flat 42 — so whenever history is
+   * shorter than the full 42-day baseline span (anywhere from the 28d gate up
+   * to full coverage at 56d+), the per-day rate is diluted and a perfectly
+   * steady habit reads k14 as running spuriously hot. `covered` (the actual
+   * number of days present in the window, clamped to [1,42]) must stand in
+   * for the flat 42 so the property holds at every span, not only once the
+   * window happens to be fully observable. */
+  it.each([28, 35, 42, 49, 56])(
+    "identical daily 60-min recall logging prices as flat even when the 14-55d baseline window is only PARTIALLY observable (history span=%id)",
+    (span) => {
+      const sessions: StudySession[] = [];
+      for (let i = 0; i <= span; i++) {
+        sessions.push(S({ id: "d" + i, kind: "recall", minutes: 60, date: addDays(ASOF, -i) }));
+      }
+      const out = studyStock(sessions, [], null, ASOF);
+      expect(out.baseline).not.toBeNull();
+      // A tiny residual (~0.01) survives even after the fix: the very OLDEST
+      // session in a finite history has no "previous" of its own, so it is
+      // charged SPACING_STALE rather than SPACING_RECENT like every other day
+      // — a real, tiny edge effect of a history that started somewhere,
+      // unrelated to the A1 bug. Before the fix this residual was swamped by
+      // a spurious +0.33 to +1.89 (see the finding); after it, the covered
+      // baseline tracks k14 to within rounding.
+      expect(Math.abs(out.term)).toBeLessThanOrEqual(0.01);
+    },
+  );
 });
 
 describe("studyStock — k14 window boundary", () => {

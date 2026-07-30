@@ -169,13 +169,13 @@ export function signalStock(ctx: DeriveCtx): Derivation | null {
         note: `EVERY SESSION IS QUALITY-WEIGHTED (RECALL AT ${QUALITY.recall.toFixed(1)}\u00d7, READING AT ${QUALITY.reading.toFixed(1)}\u00d7), SPACED (A REPEAT 1-7D LATER EARNS A SMALL BUMP) AND DOCKED WHEN THE NIGHT BEFORE RAN SHORT \u2014 THEN DECAYED TO asOf ON A HALF-LIFE H = ${fmt(H, 0)}D SET BY THIS SUBJECT'S OWN KNOWLEDGE/PROCEDURE/SKILL MIX.`,
       },
       {
-        tex: `\\text{baseline} \\;=\\; \\frac{1}{42}\\Big(\\textstyle\\sum_{i\\,:\\,14\\le\\Delta_i\\le55} \\text{effMin}_i\\Big)\\cdot D(H), \\qquad D(H) \\;=\\; \\textstyle\\sum_{d=0}^{13} e^{-\\ln2\\,d/H}`,
+        tex: `\\text{baseline} \\;=\\; \\frac{1}{\\text{covered}}\\Big(\\textstyle\\sum_{i\\,:\\,14\\le\\Delta_i\\le55} \\text{effMin}_i\\Big)\\cdot D(H), \\qquad \\text{covered} \\;=\\; \\operatorname{clamp}(\\text{days of history in that window},\\,1,\\,42)`,
         subst:
           stock.baseline == null
             ? undefined
             : `\\text{baseline} \\;=\\; ${v(stock.baseline, 1)}\\;\\text{min (same decayed units as }k_{14}\\text{)}`,
         note:
-          "THE SAME PER-SESSION \u0394\u1d62 (DAYS AGO) AS ABOVE, JUST OVER THE 14-55-DAYS-AGO WINDOW INSTEAD OF 0-13: THE 42-DAY-PRIOR RATE, PROJECTED THROUGH THE SAME DECAY KERNEL AS k\u2081\u2084 \u2014 NOT A FLAT \u00d714 \u2014 SO A PERFECTLY STEADY HABIT READS k\u2081\u2084 \u2248 BASELINE AND TERM \u2248 0 AT ANY HALF-LIFE, RATHER THAN LOOKING COLD BY CONSTRUCTION.",
+          "THE SAME PER-SESSION \u0394\u1d62 (DAYS AGO) AS ABOVE, JUST OVER THE 14-55-DAYS-AGO WINDOW INSTEAD OF 0-13 \u2014 DIVIDED BY HOW MUCH OF THAT 42-DAY WINDOW THIS DESK'S HISTORY ACTUALLY COVERS, NEVER A FLAT 42 (DAYS BEFORE THE FIRST LOG ARE UNKNOWN, NOT ZERO), THEN PROJECTED THROUGH THE SAME DECAY KERNEL AS k\u2081\u2084 \u2014 NOT A FLAT \u00d714 \u2014 SO A PERFECTLY STEADY HABIT READS k\u2081\u2084 \u2248 BASELINE AND TERM \u2248 0 AT ANY HALF-LIFE OR HISTORY LENGTH, RATHER THAN LOOKING HOT OR COLD BY CONSTRUCTION.",
       },
       {
         tex: `\\pi_{\\text{stock}} \\;=\\; ${STOCK_W}\\cdot\\tanh\\!\\left(\\frac{k_{14}-\\text{baseline}}{\\max(\\text{baseline},\\,${STOCK_FLOOR})}\\right)`,
@@ -195,7 +195,7 @@ export function signalStock(ctx: DeriveCtx): Derivation | null {
     ],
     inputs: [
       { sym: "k_{14}", label: "trailing 14d stock", value: fmt(stock.k14, 1) },
-      { sym: "\\text{baseline}", label: "42d-prior rate", value: stock.baseline == null ? "\u2014" : fmt(stock.baseline, 1), missing: stock.baseline == null },
+      { sym: "\\text{baseline}", label: "prior rate (own coverage)", value: stock.baseline == null ? "\u2014" : fmt(stock.baseline, 1), missing: stock.baseline == null },
       { sym: "H", label: "mix half-life", value: `${fmt(H, 0)}d` },
       { sym: "\\text{recall}", label: "share active-recall", value: stock.recallRatio == null ? "\u2014" : `${Math.round(stock.recallRatio * 100)}%`, missing: stock.recallRatio == null },
       { sym: "h/\\text{wk}", label: "raw hours/wk", value: stock.hoursPerWeek == null ? "\u2014" : `${fmt(stock.hoursPerWeek, 1)}h`, missing: stock.hoursPerWeek == null },

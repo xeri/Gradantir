@@ -1,5 +1,5 @@
 import type { RestLog, StudySession, SubjectMix } from "../../../types";
-import { pDate, round1 } from "../../utils";
+import { addDays, pDate, round1 } from "../../utils";
 import { ENCODING_PENALTY, QUALITY, SHORT_SLEEP_H, SPACING_RECENT, SPACING_SAME_DAY, SPACING_STALE, STOCK_FLOOR, STOCK_W, halfLifeOf } from "./params";
 
 /**
@@ -11,16 +11,22 @@ import { ENCODING_PENALTY, QUALITY, SHORT_SLEEP_H, SPACING_RECENT, SPACING_SAME_
  *
  * k14 is a DECAYED stock: each session's contribution fades from the day it
  * was logged toward asOf, half-life set by the subject's own knowledge/
- * procedure/skill mix. baseline is the SAME 42-day-prior per-day rate,
- * projected into those same decayed-14-day-window units — multiplied by
- * D(H) = Σ_{d=0}^{13} exp(−ln2·d/H), the exact weight a steady daily habit
- * would carry inside the k14 window at that half-life, not a flat ×14. A
- * flat ×14 would compare a decayed number against an undecayed one and
- * read every desk as running cold under a perfectly steady habit (worse at
- * short half-lives, where decay bites hardest); projecting the baseline
- * through the same decay kernel makes k14 ≈ baseline — and term ≈ 0 — at
- * steady state, for any half-life. See stock.test.ts's deviation-property
- * test, parameterised across the knowledge/default/skill half-lives.
+ * procedure/skill mix. baseline is the per-day rate over whatever of the
+ * 14-55d-prior window history actually COVERS — never assumed to be the
+ * full 42 days, since days before the student's first log are UNKNOWN, not
+ * zero (`covered = clamp(spanDays - 13, 1, 42)`, not a flat 42) — projected
+ * into those same decayed-14-day-window units, multiplied by D(H) =
+ * Σ_{d=0}^{13} exp(−ln2·d/H), the exact weight a steady daily habit would
+ * carry inside the k14 window at that half-life, not a flat ×14. A flat ×14
+ * (or a flat ÷42 on a partially-covered window) would compare a decayed
+ * number against an undecayed — or diluted — one and read every desk as
+ * running cold (or spuriously hot) under a perfectly steady habit; dividing
+ * by the window's own actual coverage and projecting through the same decay
+ * kernel makes k14 ≈ baseline — and term ≈ 0 — at steady state, for ANY
+ * half-life AND any history span past the 28d gate. See stock.test.ts's
+ * deviation-property tests: one parameterised across the knowledge/default/
+ * skill half-lives, one across a span sweep (28/35/42/49/56d) pinning the
+ * partial-coverage case.
  */
 
 export interface StockRead {
@@ -74,7 +80,12 @@ export function studyStock(
     const prev = i > 0 ? sorted[i - 1] : null;
     const gap = prev ? daysBetween(prev.date, s.date) : null;
     const spacingMult = gap == null || gap > 7 ? SPACING_STALE : gap === 0 ? SPACING_SAME_DAY : SPACING_RECENT;
-    const night = rest.find((r) => r.date === s.date);
+    // RestLog's own convention (types.ts, rest.ts's module doc comment): a
+    // night dated D is the night ENDING the morning of D+1. The night that
+    // impaired encoding on study-day D is therefore logged under D-1, the
+    // exact lookup rest.ts's own acuteTerm uses for "the night before an
+    // exam" (`examDate - 1`) — never `s.date` itself.
+    const night = rest.find((r) => r.date === addDays(s.date, -1));
     const encodingMult = night && night.hours < SHORT_SLEEP_H ? ENCODING_PENALTY : 1;
     const effMin = s.minutes * QUALITY[s.kind] * spacingMult * encodingMult;
     const delta = daysBetween(s.date, asOf);
@@ -95,7 +106,16 @@ export function studyStock(
     }
   }
   const spanDays = daysBetween(sorted[0].date, asOf);
-  const baseline = spanDays >= 28 && baselineCount >= 3 ? (baselineSum / 42) * decayWindowWeight(H) : null;
+  // A1 fix: `baselineSum` only accumulates over days PRESENT in [14,55] — days
+  // before the student's first log are UNKNOWN, not zero. Dividing by a flat
+  // 42 regardless of how much of that window history actually reaches
+  // dilutes the per-day rate whenever spanDays sits between the 28d gate and
+  // full 56d+ coverage, reading k14 as running spuriously hot under a
+  // perfectly steady habit. `covered` is the number of days the window
+  // ACTUALLY spans (spanDays-13, clamped to [1,42]) — at spanDays=28,
+  // covered=15=baselineCount, so baseline lands exactly on k14's own rate.
+  const covered = Math.min(42, Math.max(1, spanDays - 13));
+  const baseline = spanDays >= 28 && baselineCount >= 3 ? (baselineSum / covered) * decayWindowWeight(H) : null;
 
   const term = baseline == null ? 0 : STOCK_W * Math.tanh((k14 - baseline) / Math.max(baseline, STOCK_FLOOR));
 
