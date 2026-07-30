@@ -23,7 +23,7 @@ import { fitAiWeight } from "../quant/aipool";
 import { readinessSkill } from "../quant/readiness";
 import { classifyUpcoming } from "../upcoming";
 import { makeWeightFn } from "../weights";
-import { emptySignalBook, signalBoard } from "../quant/signals/signalread";
+import { emptySignalBook, signalBoard, signalRead } from "../quant/signals/signalread";
 import { signalSkill } from "../quant/signals/signalskill";
 import { studyStock, type StockRead } from "../quant/signals/stock";
 import { topicMastery, masteryRead, type MasteryRead } from "../quant/signals/mastery";
@@ -175,6 +175,12 @@ const voi = valueOfInformation(active, signalBook, voiDesks, TODAY);
 const signalStockOf: Record<string, StockRead> = {};
 const signalMasteryOf: Record<string, MasteryRead> = {};
 const signalModelMeanOf: Record<string, number | null> = {};
+// Per-term MARGINAL (adj(full) - adj(drop term)) — the SIGNALS view's own
+// `{drop}` ablation (rows' `marginals` map), reproduced here so
+// `signal.stock`/`signal.mastery` can be exercised keyed `"marginal"`
+// exactly as the STOCK/MASTERY table cells trigger them, not just the raw
+// channel read's own default path.
+const signalMarginalOf: Record<string, { stock: number; mastery: number }> = {};
 for (const sub of active) {
   // Filtered by subjectId, mirroring the SIGNALS view's own `stockBySubject`/
   // `masteryBySubject` memos exactly (views/signals/index.tsx) — identical to
@@ -189,11 +195,18 @@ for (const sub of active) {
   const mm = signalModelMeans.get(sub.id) ?? null;
   signalMasteryOf[sub.id] = masteryRead(subjTopics, masteries, mm, sub.attendancePct ?? null, TODAY);
   signalModelMeanOf[sub.id] = mm;
+
+  const full = signalReads.get(sub.id)!;
+  const subjEntries = entries.filter((e) => e.subjectId === sub.id);
+  const droppedStock = signalRead(sub, signalBook, subjEntries, null, mm, TODAY, { drop: new Set(["stock"]) });
+  const droppedMastery = signalRead(sub, signalBook, subjEntries, null, mm, TODAY, { drop: new Set(["mastery"]) });
+  signalMarginalOf[sub.id] = { stock: full.adj - droppedStock.adj, mastery: full.adj - droppedMastery.adj };
 }
 const signalCardFacts: ScorecardFacts = {
   signalStock: signalStockOf,
   signalMastery: signalMasteryOf,
   signalModelMean: signalModelMeanOf,
+  signalMarginal: signalMarginalOf,
 };
 const signalCtx: DeriveCtx = {
   ...ctxFor(stats[0]),
@@ -379,6 +392,21 @@ describe("the derivation layer on the real book", () => {
     }
   });
 
+  it("never leaks a raw LaTeX command into a note — notes are plain prose, rendered bare", () => {
+    // DerivationStep.note (types.ts) is plain terminal text, rendered as a bare
+    // text node (Derive.tsx), never through <Tex> — unlike tex/subst/sym,
+    // which texOf() collects and the LaTeX-parse test above already covers.
+    // A stray "\Sigma" here would show up on screen, literally, as
+    // "\SIGMA" (uppercased) rather than "Σ" — this is the one place that
+    // check has to happen by itself, since texOf() never touches notes.
+    for (const { id, ticker, d } of built) {
+      for (const step of d.steps) {
+        if (!step.note) continue;
+        expect(step.note, `${id} · ${ticker} · note: ${step.note}`).not.toMatch(/\\[a-zA-Z]/);
+      }
+    }
+  });
+
   it("reconciles: the MARK derivation states the price the board shows", () => {
     for (const s of stats) {
       const d = derivationFor("mark.price", ctxFor(s))!;
@@ -529,10 +557,27 @@ describe("the derivation layer on the real book", () => {
     expect(derivationFor("signal.adjust", signalCtx)!.result.value).toBe(fmtPts(wAdj));
 
     const stock = signalStockOf[stats[0].sub.id];
+    // Default (no key, no ablation context asked): the RAW channel read.
     expect(derivationFor("signal.stock", signalCtx)!.result.value).toBe((stock.term >= 0 ? "+" : "") + stock.term.toFixed(2));
 
     const mastery = signalMasteryOf[stats[0].sub.id];
     expect(derivationFor("signal.mastery", signalCtx)!.result.value).toBe((mastery.term >= 0 ? "+" : "") + mastery.term.toFixed(2));
+
+    // Keyed "marginal" — exactly what the STOCK/MASTERY table cells trigger:
+    // a DIFFERENT figure (adj(full) - adj(dropped)) with a DIFFERENT
+    // formatter ("—" at zero, never "+0.00"). On this untouched book both
+    // marginals are 0, so the two modes' result strings are a genuinely
+    // discriminating check — "—" only ever comes from the marginal branch.
+    const marg = signalMarginalOf[stats[0].sub.id];
+    expect(marg.stock).toBe(0);
+    expect(marg.mastery).toBe(0);
+    expect(derivationFor("signal.stock", { ...signalCtx, key: "marginal" })!.result.value).toBe("—");
+    expect(derivationFor("signal.mastery", { ...signalCtx, key: "marginal" })!.result.value).toBe("—");
+    // Absent an ablation context (no `signalMarginal` fact for this id), a
+    // "marginal" key must fall back to the raw read rather than crash or
+    // silently report `undefined`.
+    const noMarginalCtx: DeriveCtx = { ...signalCtx, card: { ...signalCardFacts, signalMarginal: null }, key: "marginal" };
+    expect(derivationFor("signal.stock", noMarginalCtx)!.result.value).toBe((stock.term >= 0 ? "+" : "") + stock.term.toFixed(2));
 
     // On this untouched book both channels collapse to the identity.
     expect(read.adj).toBe(0);

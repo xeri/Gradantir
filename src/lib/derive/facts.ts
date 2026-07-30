@@ -94,6 +94,15 @@ export interface ScorecardFacts {
   signalStock?: Record<string, StockRead> | null;
   signalMastery?: Record<string, MasteryRead> | null;
   signalModelMean?: Record<string, number | null> | null;
+  /**
+   * Per-desk MARGINAL contribution of the stock/mastery terms to `adj` —
+   * `adj(full) - adj(drop that term)`, exactly what the per-desk table's own
+   * STOCK/MASTERY columns show (never the raw channel read those columns
+   * used to be mismatched against). Computed once by the SIGNALS view's own
+   * `{drop}` ablation (never re-run here) and handed down so `signal.stock`/
+   * `signal.mastery` can report the SAME figure when opened from that cell.
+   */
+  signalMarginal?: Record<string, { stock?: number; mastery?: number }> | null;
 }
 
 /** D2 · what the chart board drew, for the figure under the cursor. */

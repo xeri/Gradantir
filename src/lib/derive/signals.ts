@@ -41,6 +41,11 @@ import {
  *  result reads byte-identical to the per-desk table cell it underlines. */
 const ZERO_EPS = 0.005;
 const fmtPts = (x: number): string => (Math.abs(x) < ZERO_EPS ? "0.00" : `${x > 0 ? "+" : ""}${x.toFixed(2)}`);
+/** Mirrors the per-desk table's own MARGINAL cell exactly (an em-dash under
+ *  the epsilon, `fmtPts` above it) — the STOCK/MASTERY columns' own
+ *  formatter, distinct from `fmtPts` alone (which prints "0.00" at zero
+ *  rather than "—"). */
+const fmtMarginal = (x: number): string => (Math.abs(x) < ZERO_EPS ? "—" : fmtPts(x));
 
 /* ── §D5 · the combined shift ───────────────────────────────────────── */
 
@@ -93,7 +98,7 @@ export function signalAdjust(ctx: DeriveCtx): Derivation | null {
         tex: `\\text{adj} \\;=\\; \\operatorname{clip}_{[-${SIGNAL_ADJ_CAP},\\,${SIGNAL_ADJ_CAP}]}\\!\\big(\\Sigma\\big), \\qquad \\Sigma \\;=\\; \\text{sum of every candidate this desk fired, floor or no floor}`,
         subst: `\\Sigma \\;=\\; ${v(read.rawSum, 2)} \\;\\Longrightarrow\\; \\operatorname{clip}(${v(read.rawSum, 2)}) \\;=\\; ${v(read.adj, 2)}`,
         note: clampBinds
-          ? `THE CLAMP IS BINDING HERE \u2014 |\\Sigma| CLEARS \u00b1${SIGNAL_ADJ_CAP} PTS, SO THE ROWS ABOVE NO LONGER SUM TO ADJ. EACH TERM IS STILL AN HONEST READ ON ITS OWN, BUT THE CLAMPED TOTAL IS NOT THEIR PLAIN SUM. (THE PER-DESK TABLE'S OWN MARGINAL COLUMN DIFFERS AGAIN \u2014 IT IS adj(FULL) \u2212 adj(DROPPED), NOT THE RAW TERM ABOVE.)`
+          ? `THE CLAMP IS BINDING HERE \u2014 |\u03a3| CLEARS \u00b1${SIGNAL_ADJ_CAP} PTS, SO THE ROWS ABOVE NO LONGER SUM TO ADJ. EACH TERM IS STILL AN HONEST READ ON ITS OWN, BUT THE CLAMPED TOTAL IS NOT THEIR PLAIN SUM. (THE PER-DESK TABLE'S OWN MARGINAL COLUMN DIFFERS AGAIN \u2014 IT IS adj(FULL) \u2212 adj(DROPPED), NOT THE RAW TERM ABOVE.)`
           : "\u03a3 CAN SIT SLIGHTLY BEYOND THE VISIBLE ROWS' OWN TOTAL \u2014 A CONTRIBUTOR UNDER THE 0.05PT DISPLAY FLOOR (A MILD ATTENDANCE SHAVE, AN UNROUNDED ANXIETY TERM) STILL COUNTS TOWARD \u03a3 EVEN THOUGH IT EARNED NO ROW OF ITS OWN.",
       },
       ...creditSteps(fit, { kappa: SIGNAL_KAPPA, cap: SIGNAL_CAP, toward: SIGNAL_PRIOR, unit: "CRPS" }),
@@ -139,13 +144,25 @@ export function signalStock(ctx: DeriveCtx): Derivation | null {
   if (!s || !stock) return null;
   const H = halfLifeOf(s.sub.mix ?? null);
   const denom = stock.baseline == null ? null : Math.max(stock.baseline, STOCK_FLOOR);
+  const marginal = id != null ? ctx.card?.signalMarginal?.[id]?.stock : undefined;
+
+  // The STOCK column in the per-desk table shows the MARGINAL contribution
+  // to adj (full - dropped), never the raw channel read below \u2014 a different
+  // figure, with a different formatter (fmtMarginal's "\u2014" at zero vs sgn's
+  // "+0.00"). `ctx.key === "marginal"` is what that cell passes; anything
+  // else (including no key at all, e.g. a direct `signal.stock` lookup with
+  // no ablation context) reports the raw read instead.
+  const headlineMarginal = ctx.key === "marginal" && marginal != null;
+  const resultSym = headlineMarginal ? "\\Delta_{\\text{marg}}" : "\\pi_{\\text{stock}}";
+  const resultVal = headlineMarginal ? fmtMarginal(marginal as number) : sgn(stock.term, 2);
 
   return {
     id: "signal.stock",
-    title: "STUDY STOCK \u00b7 14D VS OWN NORM",
-    symbol: "\\pi_{\\text{stock}}",
-    claim:
-      "HOW MUCH QUALITY-WEIGHTED STUDY YOU HAVE ACTUALLY BANKED LATELY, AGAINST YOUR OWN TRAILING RATE \u2014 NEVER AGAINST ANOTHER DESK.",
+    title: headlineMarginal ? "STUDY STOCK \u00b7 MARGINAL CONTRIBUTION" : "STUDY STOCK \u00b7 14D VS OWN NORM",
+    symbol: resultSym,
+    claim: headlineMarginal
+      ? "WHAT THIS TERM ACTUALLY MOVED ADJ BY \u2014 adj(FULL) MINUS adj WITH STOCK DROPPED \u2014 NOT ITS RAW READ, SO IT STAYS TRUE TO THE CLAMPED SHIFT THE STOCK COLUMN REPORTS."
+      : "HOW MUCH QUALITY-WEIGHTED STUDY YOU HAVE ACTUALLY BANKED LATELY, AGAINST YOUR OWN TRAILING RATE \u2014 NEVER AGAINST ANOTHER DESK.",
     steps: [
       {
         tex: `k_{14} \\;=\\; \\sum_{i\\,:\\,0\\le\\Delta_i\\le13} \\text{minutes}_i\\cdot Q(\\text{kind}_i)\\cdot\\text{spacing}_i\\cdot\\text{encoding}_i\\cdot e^{-\\ln 2\\,\\Delta_i / H}, \\qquad \\Delta_i \\;=\\; \\text{days, session } i \\text{ to asOf}`,
@@ -167,7 +184,13 @@ export function signalStock(ctx: DeriveCtx): Derivation | null {
             ? undefined
             : `= ${STOCK_W}\\cdot\\tanh\\!\\left(\\frac{${v(stock.k14, 1)} - ${v(stock.baseline, 1)}}{${v(denom, 0)}}\\right) \\;=\\; ${v(stock.term, 2)}`,
         note:
-          `A SATURATING (tanh) READ: RUNNING TWICE YOUR OWN NORM IS NOT WORTH TWICE THE CREDIT, AND THE FLOOR IN THE DENOMINATOR KEEPS A NEAR-ZERO BASELINE FROM BLOWING THE RATIO UP ON A THIN WEEK. (THE STOCK COLUMN IN THE PER-DESK TABLE SHOWS THIS TERM'S MARGINAL CONTRIBUTION TO ADJ, WHICH CAN DIFFER FROM THIS RAW READ ONCE THE \u00b1${SIGNAL_ADJ_CAP} CLAMP BINDS.)`,
+          "A SATURATING (tanh) READ: RUNNING TWICE YOUR OWN NORM IS NOT WORTH TWICE THE CREDIT, AND THE FLOOR IN THE DENOMINATOR KEEPS A NEAR-ZERO BASELINE FROM BLOWING THE RATIO UP ON A THIN WEEK.",
+      },
+      {
+        tex: `\\Delta_{\\text{marg}} \\;=\\; \\text{adj(full)} - \\text{adj(drop STOCK)}`,
+        subst: marginal != null ? `\\Delta_{\\text{marg}} \\;=\\; ${v(marginal, 2)}` : undefined,
+        note:
+          `THE STOCK COLUMN IN THE PER-DESK TABLE SHOWS THIS MARGINAL, NOT THE RAW READ ABOVE \u2014 THEY AGREE EXACTLY UNTIL THE \u00b1${SIGNAL_ADJ_CAP} CLAMP BINDS ACROSS TWO OR MORE TERMS AT ONCE, WHICH IS WHEN THE TWO NUMBERS ON THIS CARD CAN LEGITIMATELY DIFFER.`,
       },
     ],
     inputs: [
@@ -176,8 +199,10 @@ export function signalStock(ctx: DeriveCtx): Derivation | null {
       { sym: "H", label: "mix half-life", value: `${fmt(H, 0)}d` },
       { sym: "\\text{recall}", label: "share active-recall", value: stock.recallRatio == null ? "\u2014" : `${Math.round(stock.recallRatio * 100)}%`, missing: stock.recallRatio == null },
       { sym: "h/\\text{wk}", label: "raw hours/wk", value: stock.hoursPerWeek == null ? "\u2014" : `${fmt(stock.hoursPerWeek, 1)}h`, missing: stock.hoursPerWeek == null },
+      { sym: "\\pi_{\\text{stock}}", label: "raw channel read", value: sgn(stock.term, 2) },
+      { sym: "\\Delta_{\\text{marg}}", label: "marginal (table column)", value: marginal == null ? "\u2014" : fmtMarginal(marginal), missing: marginal == null },
     ],
-    result: { tex: "\\pi_{\\text{stock}}", value: sgn(stock.term, 2), unit: "PTS" },
+    result: { tex: resultSym, value: resultVal, unit: "PTS" },
     gates: [{ text: "\u2265 28 days of history and \u2265 3 sessions in the 14-55d baseline window", pass: stock.baseline != null }],
     related: ["signal.adjust", "signal.mastery"],
     source: "src/lib/quant/signals/stock.ts \u00b7 studyStock",
@@ -213,6 +238,14 @@ export function signalMastery(ctx: DeriveCtx): Derivation | null {
   const sAtt = shaved ? 1 - ((95 - attendancePct) / 100) * 0.5 : 1;
   const coveredShaved = covered * sAtt;
   const priced = modelMean != null && mastery.predictedPaper != null && covered >= 0.3 && nMarked >= MASTERY_MIN_MARKS;
+  const marginal = id != null ? ctx.card?.signalMarginal?.[id]?.mastery : undefined;
+
+  // Same split as signal.stock: the MASTERY column shows the marginal
+  // contribution to adj, not the raw channel read — different figure,
+  // different formatter, selected by `ctx.key === "marginal"`.
+  const headlineMarginal = ctx.key === "marginal" && marginal != null;
+  const resultSym = headlineMarginal ? "\\Delta_{\\text{marg}}" : "\\pi_{\\text{mastery}}";
+  const resultVal = headlineMarginal ? fmtMarginal(marginal as number) : sgn(mastery.term, 2);
 
   const inputs: DerivationInput[] = [
     { sym: "\\text{coverage}", label: "weighted syllabus marked (raw)", value: mastery.coverage == null ? "\u2014" : `${Math.round(mastery.coverage * 100)}%`, missing: mastery.coverage == null },
@@ -227,14 +260,17 @@ export function signalMastery(ctx: DeriveCtx): Derivation | null {
     { sym: "n_{\\text{marked}}", label: "topics with a mark", value: String(nMarked) },
     { sym: "\\text{marks}", label: "total marks folded in", value: String(totalMarks) },
     { sym: "\\sigma_{\\text{uneven}}", label: "unevenness across topics", value: fmt(mastery.unevenness, 2) },
+    { sym: "\\pi_{\\text{mastery}}", label: "raw channel read", value: sgn(mastery.term, 2) },
+    { sym: "\\Delta_{\\text{marg}}", label: "marginal (table column)", value: marginal == null ? "\u2014" : fmtMarginal(marginal), missing: marginal == null },
   );
 
   return {
     id: "signal.mastery",
-    title: "MASTERY \u00b7 MEASURED, NOT SELF-REPORTED",
-    symbol: "\\pi_{\\text{mastery}}",
-    claim:
-      "THE ONE SIGNAL THE ENGINE ACTUALLY MEASURES \u2014 MARKED TOPIC PERFORMANCE, ROLLED UP INTO A WHOLE-PAPER PREDICTION AND PRICED ONLY AS ITS DEVIATION FROM THE HOUSE'S OWN CALL.",
+    title: headlineMarginal ? "MASTERY \u00b7 MARGINAL CONTRIBUTION" : "MASTERY \u00b7 MEASURED, NOT SELF-REPORTED",
+    symbol: resultSym,
+    claim: headlineMarginal
+      ? "WHAT THIS TERM ACTUALLY MOVED ADJ BY \u2014 adj(FULL) MINUS adj WITH MASTERY DROPPED \u2014 NOT ITS RAW READ, SO IT STAYS TRUE TO THE CLAMPED SHIFT THE MASTERY COLUMN REPORTS."
+      : "THE ONE SIGNAL THE ENGINE ACTUALLY MEASURES \u2014 MARKED TOPIC PERFORMANCE, ROLLED UP INTO A WHOLE-PAPER PREDICTION AND PRICED ONLY AS ITS DEVIATION FROM THE HOUSE'S OWN CALL.",
     steps: [
       {
         tex: shaved
@@ -258,9 +294,15 @@ export function signalMastery(ctx: DeriveCtx): Derivation | null {
         note:
           "SATURATING, LIKE THE STOCK CHANNEL, AND ADDITIONALLY DAMPED BY totalMarks (THE SUM OF PER-TOPIC MARKS FOLDED IN, WHICH CAN COME FROM ONE PAPER MARKED AGAINST SEVERAL TOPICS OR SEVERAL PAPERS AGAINST ONE) \u2014 SIX MARKS FOLDED IN BEFORE THE CHANNEL IS TRUSTED AT FULL WEIGHT.",
       },
+      {
+        tex: `\\Delta_{\\text{marg}} \\;=\\; \\text{adj(full)} - \\text{adj(drop MASTERY)}`,
+        subst: marginal != null ? `\\Delta_{\\text{marg}} \\;=\\; ${v(marginal, 2)}` : undefined,
+        note:
+          `THE MASTERY COLUMN IN THE PER-DESK TABLE SHOWS THIS MARGINAL, NOT THE RAW READ ABOVE \u2014 THEY AGREE EXACTLY UNTIL THE \u00b1${SIGNAL_ADJ_CAP} CLAMP BINDS ACROSS TWO OR MORE TERMS AT ONCE, WHICH IS WHEN THE TWO NUMBERS ON THIS CARD CAN LEGITIMATELY DIFFER.`,
+      },
     ],
     inputs,
-    result: { tex: "\\pi_{\\text{mastery}}", value: sgn(mastery.term, 2), unit: "PTS" },
+    result: { tex: resultSym, value: resultVal, unit: "PTS" },
     gates: [
       { text: "\u2265 30% of the weighted syllabus covered by at least one mark", pass: covered >= 0.3 },
       { text: `\u2265 ${MASTERY_MIN_MARKS} marked topics before the channel is trusted`, pass: nMarked >= MASTERY_MIN_MARKS },

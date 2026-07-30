@@ -200,7 +200,12 @@ export function Signals({
   /* The derivation context this floor hands every trigger — App's own board
      facts (Task 12/T19: signalReads/signalFit/voi) plus the SIGNALS board's
      own facts (T19), threaded via `ScorecardFacts` exactly like the
-     Scorecard's `cardFacts` (both are D5). */
+     Scorecard's `cardFacts` (both are D5). `signalMarginal` is `rows`' own
+     per-term ablation (`{drop}`), reused rather than recomputed a second
+     time, so `signal.stock`/`signal.mastery` can report the SAME marginal
+     figure the STOCK/MASTERY columns themselves show when keyed
+     `"marginal"` — never the raw channel read, which is a different number
+     with a different formatter (see signals.ts's own `fmtMarginal`). */
   const dctx = useMemo<DeriveCtx | undefined>(() => {
     if (!deriveCtx) return undefined;
     const masteryOf: Record<string, MasteryRead> = {};
@@ -209,14 +214,24 @@ export function Signals({
       masteryOf[sub.id] = masteryBySubject.get(sub.id)?.read ?? EMPTY_MASTERY;
       modelMeanOf[sub.id] = modelMeans.get(sub.id) ?? null;
     }
+    const marginalOf: Record<string, { stock?: number; mastery?: number }> = {};
+    for (const r of rows) {
+      marginalOf[r.sub.id] = { stock: r.marginals.get("stock"), mastery: r.marginals.get("mastery") };
+    }
     return {
       ...deriveCtx,
       signalReads,
       signalFit,
       voi,
-      card: { ...deriveCtx.card, signalStock: stockBySubject, signalMastery: masteryOf, signalModelMean: modelMeanOf },
+      card: {
+        ...deriveCtx.card,
+        signalStock: stockBySubject,
+        signalMastery: masteryOf,
+        signalModelMean: modelMeanOf,
+        signalMarginal: marginalOf,
+      },
     };
-  }, [deriveCtx, liveSubs, masteryBySubject, modelMeans, signalReads, signalFit, voi, stockBySubject]);
+  }, [deriveCtx, liveSubs, masteryBySubject, modelMeans, signalReads, signalFit, voi, stockBySubject, rows]);
 
   return (
     <div className="space-y-4">
@@ -286,7 +301,7 @@ export function Signals({
                       return (
                         <td key={c.key} className="px-2.5 py-2 text-right text-xs tabular-nums" style={{ fontFamily: FONT.mono, color: toneOf(v) }}>
                           {derivedId && dctx ? (
-                            <Derive id={derivedId} ctx={{ ...dctx, stat: r.stat }} passive>{cell}</Derive>
+                            <Derive id={derivedId} ctx={{ ...dctx, stat: r.stat, key: "marginal" }} passive>{cell}</Derive>
                           ) : (
                             cell
                           )}
