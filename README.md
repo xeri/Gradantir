@@ -1368,3 +1368,197 @@ register's inputs (`subjects`, `entries`, `settings`), so filing a wire call can
 that scores it: the wire is graded by a record it structurally cannot touch. On the committed fixture
 the channel is an exact identity — no sittings, no calls, no seat — which is why §21 and the gate are
 unmoved by its existence.
+
+---
+
+## 30 · Life signals — the state desk
+
+§27–29 price what the student and an outside desk know that the tape cannot. This layer prices a
+third kind of private information: **state** — how many hours actually went in this fortnight,
+whether last night was a six-hour night before the paper, which topics the last marked script proved
+shaky, whether the syllabus is the kind where a shaky prerequisite caps everything built on it.
+`src/lib/quant/signals/` reads five logged inputs — `sessions`, `rest`, `disruptions`,
+`topics`/`topicMarks`, and a subject's own `traits`/`mix`/`belief`/`attendancePct` plus a person-level
+`profile` — and turns them into one small shift on the desk's own `nextExam` call and a widening on
+its bands: a fifth priced channel beside bias, self, aggregate and wire, but seated differently from
+all three — it moves the house's own read, not a member of a pool.
+
+### The doctrine
+
+**Every term is deviation-shaped, not level-shaped.** `stock.ts`'s hours-logged term measures a
+decayed 14-day study stock against the desk's own decayed 42-day norm, never against an assumed-ideal
+hour count. `mastery.ts` compares the book's own topic-weighted prediction against the model's own
+`modelMean`, never against 100. `rest.ts`'s chronic term fires only on a recent-vs-baseline
+*worsening* — a desk that has always run a steady six hours a night prices at zero, same as one that
+has always run nine. A student who studies, sleeps and sits exactly the way they always have gets
+`adj ≈ 0` on every desk. That is what stops the channel double-counting against `biascal.ts` (§26):
+bias correction already absorbs a subject's *steady-state* miscalibration, so a signal term is only
+ever entitled to claim the *change* on top of it.
+
+**The channel sits house-side, not pool-side.** `applySignals` (`apply.ts`) shifts the desk's own
+`nextExam` *before* the §27/§29 self/wire pool runs, in the same seat `biascal.ts` occupies — so it is
+not a member competing for the `POOL_CEIL = 0.6` those two channels share. `App.tsx` runs the three in
+one fixed order: `stats = applyBias(rawStats, bias)`, then `signalled = applySignals(stats,
+signalReads, signalFit.w, on)`, then `pooled = poolBoardJoint(signalled, …)`. `rawStats` and the
+forecast register stay untouched by any of it, so every fit — including the channel's own walk-forward
+scorer below — still reads strictly-earlier, unadjusted history.
+
+**The variance claim is ungated; the level claim is earned.** `traits.ts`'s `sdMult` — marker noise
+from low determinism, sampling noise from low breadth compounded by uneven topic mastery — applies at
+full strength whenever `signalWeighting` is on, with no `earnedWeight` shrinkage in front of it. A
+widening is a humility claim, not a directional bet, the same precedent §27 sets for the pool's own
+disagreement term $w(1-w)(\mu_y-\mu_m)^2$, which is never earned-gated either. The *level* shift
+(`w · adj`) is the one piece of this channel that has to be earned — see the credibility rule below.
+
+**A state prior, not a zero prior.** At zero scored rounds, `signalSkill` returns `w = SIGNAL_PRIOR =
+0.3` — the same "charged from the day it exists" treatment §15c's `READINESS_PRIOR` gets, but lower,
+because a signal read makes a *level* claim on the forecast where readiness only tilts a premium.
+`SIGNAL_PRIOR` multiplies an `adj` of 0 on an empty book, so the prior is real but inert until there is
+a book to read.
+
+**Identity on the committed fixture, everywhere, by construction.** `book.json` carries no signal
+slices, so `signalBoard` returns `adj=0, sdMult=1, terms:[]` on every desk, `applySignals` hands back
+the same array reference, and `signalSkill` returns the identity object at `enabled: false` —
+`npm run gate`, README §21 and `mark.book.test.ts` are all unmoved. `Settings.signalWeighting` follows
+the other student-input switches' polarity (absent ⇒ ON, stored only when `false`) — the inverse of
+the wire's `aiWeighting` (§29), so a book exported before this feature existed imports with the
+channel already on, exactly as it would have read had the feature always been there.
+
+### The formulas
+
+Every constant below is quoted from `src/lib/quant/signals/params.ts` (package-local, the pool.ts
+Z90/SELF_DF precedent) or `src/lib/quant/params.ts`'s life-signals block, never hand-typed.
+
+**Stock** (`stock.ts`) — a decayed 14-day effective-study read against the desk's own decayed 42-day
+baseline, both projected through the subject's own knowledge/procedure/skill half-life $H$
+(`halfLifeOf`, log-domain blend of 14/45/120 days, default 45 when the mix is unset):
+
+$$
+\text{term}_{\text{stock}} = \text{STOCK\_W} \cdot \tanh\!\left(\frac{k_{14} - \text{baseline}}{\max(\text{baseline}, \text{STOCK\_FLOOR})}\right), \qquad \text{STOCK\_W} = 2.0,\ \text{STOCK\_FLOOR} = 240 \text{ min}.
+$$
+
+**Mastery** (`mastery.ts`) — the one *measured* channel, everything else here is a self-report. A
+whole-paper prediction $P\cdot 100$ blends covered-topic EWMA mastery (decayed, prereq-gated in a
+cumulative subject) with the model's own mean on the uncovered share, then prices only the deviation
+from that same model mean, gated on enough marked topics and dampened while the count is thin:
+
+$$
+\text{term}_{\text{mastery}} = \text{MASTERY\_W} \cdot \tanh\!\left(\frac{100P - \text{modelMean}}{\text{MASTERY\_SCALE}}\right) \cdot \min\!\left(1, \frac{\text{totalMarks}}{6}\right),
+$$
+
+zero unless covered mass $\ge 0.3$ and marked topics $\ge$ `MASTERY_MIN_MARKS` = 3, with
+`MASTERY_W` = 3.0 and `MASTERY_SCALE` = 8 — the largest single weight in the layer, because it is the
+only term reading a measurement rather than a report.
+
+**Rest** (`rest.ts`) — three deterioration-only sub-terms, each $\le 0$, needing `REST_MIN_NIGHTS` = 7
+nights before pricing (14 for the baseline window):
+
+$$
+\text{chronic} = -\min\!\big(\text{REST\_CHRONIC\_W}\cdot\text{clamp}(\overline{h}_{56}-\overline{h}_{14},\,0,\,2),\ \text{REST\_CHRONIC\_CAP}\big), \qquad 0.75,\ 1.5
+$$
+$$
+\text{reg} = -\text{REST\_REG\_W}\cdot\text{clamp}\!\left(\frac{\text{regSd}-60}{60},\,0,\,1\right), \qquad \text{REST\_REG\_W} = 0.5
+$$
+$$
+\text{acute} = -\min\!\big(\text{REST\_ACUTE\_W}\cdot(6.5-h_{\text{night before}}),\ \text{REST\_ACUTE\_CAP}\big), \qquad 0.8,\ 2.0
+$$
+
+— chronic on a widening 56-vs-14-day sleep gap, reg on bedtime irregularity beyond ±1h sd, acute on a
+sub-6.5h night immediately before the sitting. An absolute sleep level is never priced, only these
+three deviations — see the caveat below on why.
+
+**Disruption** (`disrupt.ts`) — a decaying shock, not a flat deduction, only priced against a live
+sitting to recover against:
+
+$$
+\text{term} = -\min\!\left(\sum_i \text{DISRUPT\_SEV}[k_i]\cdot\Big(0.5+\tfrac{0.5\min(d_i,7)}{7}\Big)\cdot e^{-\Delta_i/\text{DISRUPT\_TAU}},\ \text{DISRUPT\_CAP}\right),
+$$
+
+severity `illness`/`family` = 1.5, `event` = 0.75, `other` = 1.0, duration credit capped at a week,
+recovery time constant `DISRUPT_TAU` = 10 days, whole-channel cap `DISRUPT_CAP` = 2.5.
+
+**Anxiety and chronotype** (`signalread.ts`) — the smallest, most situational terms, each firing only
+near a live sitting. Anxiety prices only the high-arousal Yerkes-Dodson arm — a heavier-than-typical
+paper charges a self-reported anxious student, an easy one never credits them:
+$\text{pts} = -\text{ANX\_W}\cdot\max(0,\tfrac{\text{anx}-3}{2})\cdot\text{clamp}(\tfrac{\text{weight}}{\text{typicalWeight}}-1,\,0,\,1)$,
+`ANX_W` = 1.5. Chronotype prices sitting-time synchrony against a self-reported owl/lark:
+an owl sitting at/before 9am charges `CHRONO_W` = 0.75 in full, a lark sitting at/after 3pm charges
+half that — measured effects here run well under a point, so the weight stays small.
+
+**Attendance** (`signalread.ts`) — only when a subject has no topic breakdown to let `mastery.ts`'s
+own attendance shave handle it instead: below 95% attended, $\text{pts} = -\min(1,
+\tfrac{(95-\text{pct})}{10}\cdot 0.5)$.
+
+**Traits** (`traits.ts`) — the one variance-only term, never a level effect:
+
+$$
+\text{sdMult} = \text{clamp}\big(1 + \text{TRAIT\_MARKER\_W}(1-\delta) + \text{TRAIT\_SAMPLING\_W}(1-\beta)(1+u) + t + b,\ 1,\ \text{TRAIT\_SDMULT\_CAP}\big),
+$$
+
+marker noise `TRAIT_MARKER_W` = 0.20 on $(1-\text{determinism})$, sampling noise `TRAIT_SAMPLING_W` =
+0.15 on $(1-\text{breadth})$ scaled up by topic unevenness, a flat +0.05 when ≥25% of marks carry a
+"time" error, a flat +0.05 on a stated belief ≤ 2, all clamped to `TRAIT_SDMULT_CAP` = 1.4 — every
+component is $\ge 0$, so the multiplier can only widen a forecast, never move its centre.
+
+**The clamp, the credibility, and the shift.** Every candidate term sums, unclamped, to `rawSum`; the
+priced `adj` is $\text{clamp}(\text{rawSum},\,\pm\text{SIGNAL\_ADJ\_CAP})$, rounded to 2dp, with
+`SIGNAL_ADJ_CAP` = 4 — set near `EFFORT_ACTUAL_W`, the layer's closest sibling. The channel's weight
+is earned exactly like §27/§29's, on `signalskill.ts`'s own walk-forward replay (as-of each resolved
+exam round, with the state book filtered to what was logged strictly before that round's
+resolution):
+
+$$
+w = \text{clamp}\!\left(\frac{n\cdot\text{rawShare} + \kappa\cdot\text{SIGNAL\_PRIOR}}{n+\kappa},\ 0,\ \text{SIGNAL\_CAP}\right), \qquad \kappa = \text{SIGNAL\_KAPPA} = 2,\ \text{SIGNAL\_CAP} = 0.35,\ \text{SIGNAL\_PRIOR} = 0.3.
+$$
+
+`SIGNAL_CAP` sits under `SELF_POOL_CAP` (0.45) on purpose — a self-logged state channel earns a
+smaller seat than the self-forecast channel, because it is evidence about *conditions*, not a call on
+the outcome. After the gate, the realized worst case is `SIGNAL_CAP × SIGNAL_ADJ_CAP` ≈ 1.4 points.
+`applySignals` then shifts the mean by $w\cdot\text{adj}$ and scales every band's half-width by
+`sdMult`, recentring on the new mean the same way `stats.ts`'s own bias post-process (§26) recentres
+`nextExam` on its offset — additive rather than a replacement, and an exact identity per desk when the
+shift rounds to under 0.05 at 1dp and `sdMult` is exactly 1.
+
+### The value-of-information layer
+
+`voi.ts` is the one part of this section that never touches a number the engine prices — a
+display-only ranker (`valueOfInformation`) telling a student which missing input buys back the most
+forecast precision per minute logged, scored by
+
+$$
+\text{score} = \frac{\text{gainPts}}{1 + \text{effortMin}/\text{VOI\_EFFORT\_SCALE}}, \qquad \text{VOI\_EFFORT\_SCALE} = 30,
+$$
+
+over a fixed menu of presence/absence/size heuristics, each with its own conservatism argument rather
+than a fitted term: no rest logs at all books-wide (`VOI_REST_GAIN` = 1.5pts, `VOI_REST_EFFORT` = 10
+min), no sessions logged for a desk (`VOI_SESSIONS_GAIN` = 2.0, effort 15), no profile at all
+(`VOI_PROFILE_GAIN` = 0.75, effort 1), no topic breakdown on a desk wide enough to be worth one
+(`VOI_TOPICS_GAIN_W` = 0.15 × sd × `VOI_Z90` (1.64), effort 10), topics logged but under
+`MASTERY_MIN_MARKS` marked (`VOI_MARKS_GAIN_W` = 3.0 × min(1, sd / `VOI_MARKS_SD_SAT` (8)), effort
+`VOI_MARKS_EFFORT_PER` = 5 per paper needed), and traits never set (`VOI_TRAITS_GAIN_W` = 0.2 × sd ×
+`VOI_Z90`, effort 2). The top `VOI_TOP_N` = 8 items by score are kept. None of it feeds
+`stats.ts`/`aggregate.ts`/the register — the whole ranker can be wired into or out of the panel without
+moving a single digit anywhere else, which is why the committed fixture and `npm run gate` are
+unmoved by its existence regardless of what it returns.
+
+### Two things worth stating plainly
+
+**Per-term marginals do not sum to `adj`** once two or more terms jointly bind the ±`SIGNAL_ADJ_CAP`
+clamp. The SIGNALS view shows each term column as a *marginal* — `adj(full)` minus `adj` with that
+term dropped — not its raw read, so the column stays true to what actually moved the clamped shift.
+But the drop-one marginal for term $i$ is $\text{cap} - \text{clamp}(S - \text{pts}_i,\,\pm\text{cap})$,
+which is not linear in $\text{pts}_i$ once the clamp binds: with two terms at +3 each ($S=+6$, capped
+`adj = +4`), each marginal is $4 - \text{clamp}(3,\pm4) = +1$, summing to +2, not +4. Each marginal is
+individually honest about what dropping that one term alone would have changed; the sum across terms
+is not additive once the cap is live, and this is stated on the SIGNALS view's own footer, not just
+here.
+
+**The engine distinguishes "never set" from "set to a neutral default."** `mastery.ts`'s prereq gate
+fires only when a subject's `traits` object is non-null at all — a topic's ceiling is never compared
+against its prerequisites' mastery until `cumulativeness` has actually been set, neutral or otherwise.
+And `halfLifeOf` returns `DEFAULT_HALF_LIFE` (45 days) for a subject with no `mix` at all, versus the
+log-domain blended ≈42.3 days a subject would get from an *even* 1/3-1/3-1/3 mix — a different number
+from the one a student who has genuinely never touched the mix editor gets. This is why the traits
+editor commits only the groups the student actually moved, rather than defaulting every slider to its
+midpoint and filing the lot: filing a default would silently convert "unset" into "evenly set," and
+the two price differently.

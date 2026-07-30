@@ -100,6 +100,30 @@ command), `derive/{index,types,facts}.ts` (`signal.adjust/stock/mastery/voi` bui
 `npm test` green at every task boundary · `npm run gate` clean against `baseline.json` (fixture
 carries no signal data, so walk-forward CRPS cannot move) · `npm run gen:table` byte-identical to
 the pre-feature §21 · `npm run build` (tsc) clean, which also proves the Wire's `satisfies` locks
-are satisfied against the grown `Subject`/`Upcoming` types. Status: approved, in progress — this
-document's Verification section gets real pass counts and the gate's before/after skill number in
-Task 20, once the full plan lands.
+are satisfied against the grown `Subject`/`Upcoming` types. Status: **shipped** — Task 20 closes it
+out with real numbers below.
+
+### Final verification (Task 20, 2026-07-30)
+
+1. **`npm test`** — `npx vitest run --pool=forks --poolOptions.forks.singleFork=true`:
+   **99 test files, 1225 tests, all green.** (The single-fork flag sidesteps the ledgered
+   `derive.book.test.ts` LaTeX-parse timeout under parallel-fork contention — environmental,
+   unrelated to this feature, tracked since Task 6.)
+2. **`npm run gate`** — 5 test files, 33 tests, all green, including
+   `eval.book.test.ts`'s deterministic skill-scoreboard check against
+   `src/lib/quant/eval/__snapshots__/baseline.json`. Skill is unchanged at **perSubjectSkill = 0.26**
+   before and after this feature (`n=56`, `perSubjectMae=9.06`, `cover90=0.82`) — exactly what
+   Decision 7 predicts: the committed fixture carries no signal slices, so every desk's
+   `signalRead` collapses to the identity and the walk-forward replay never sees a nonzero `adj`.
+   `baseline.json` did not need regenerating.
+3. **`npm run gen:table`** — regenerated output diffed with
+   `diff -u .superpowers/sdd/good-framing-question-rank-sunny-bumblebee/gen-table-before-t9.txt <new output>`:
+   **zero-line diff, byte-identical.** §21 is untouched, as required.
+4. **`npm run build`** — `tsc && vite build`: **clean**, exit 0 (one pre-existing Vite chunk-size
+   advisory, not an error). Proves the wire's `satisfies` locks type-check against the grown
+   `Subject`/`Upcoming` shapes.
+
+Manual smoke (`npm run dev`) was exercised via the existing `App.signals.test.tsx` /
+`LogPanels.test.tsx` coverage rather than a live browser session; those tests already assert the
+SIGNALS view renders terms and a `W·ADJ` figure, and that toggling `signalWeighting` off reverts the
+pooled numbers, which is the same behaviour item 5 of the brief's end-to-end list calls for.
