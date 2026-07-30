@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   ancestorsOf, applySplit, detectSplits, inheritedEntries, lineageRootOf,
-  assertRoster, rosterAt,
+  assertRoster, rosterAt, splitTopicMarkLoss,
 } from "./lineage";
 import { DEFAULT_CALENDAR } from "./calendar";
-import type { GradeEntry, Subject } from "../types";
+import type { GradeEntry, Subject, TopicMark } from "../types";
 
 const sub = (id: string, over: Partial<Subject> = {}): Subject => ({
   id, name: id.toUpperCase(), ticker: id.toUpperCase(), color: "#fff",
@@ -301,5 +301,56 @@ describe("applySplit", () => {
 
   it("is idempotent — a merged book detects nothing further", () => {
     expect(detectSplits(out.subjects, out.entries)).toEqual([]);
+  });
+});
+
+/* A3 review finding: applySplit moves a shared entry to the ancestor desk
+   keeping the entry's own id, but the entry's TOPIC MARKS stay filed under
+   the dual FK (entryId, topicId) — and a mark's topicId still points at the
+   MEMBER desk (topics never move). After the merge, entrySubjectOf(entryId)
+   reads the ancestor while topicSubjectOf(topicId) still reads the member,
+   so io.ts's sanitizeTopicMark drops the row on the very next load — the
+   student is never told. applySplit must drop those marks itself, explicitly
+   and visibly, and `splitTopicMarkLoss` must let a caller preview the count
+   BEFORE the merge is applied (SplitBanner's copy, per the review). */
+describe("applySplit and topic marks (A3 review finding)", () => {
+  const econ = sub("econ"), bus = sub("bus");
+  const entries = [
+    ex("econ", "2025-04-30", 82), ex("bus", "2025-04-30", 82),
+    ex("econ", "2025-08-01", 52), ex("bus", "2025-08-01", 52),
+    ex("econ", "2025-12-03", 76), ex("bus", "2025-12-03", 76),
+    ex("econ", "2026-04-08", 64), ex("bus", "2026-04-08", 82),
+  ];
+  const [plan] = detectSplits([econ, bus], entries);
+  // econ is the eldest (first candidate) — its shared prints are the ones
+  // that survive under the ancestor's id after the merge.
+  const reassigned = entries.find((e) => e.subjectId === "econ" && e.date === "2025-04-30")!;
+  const untouched = entries.find((e) => e.subjectId === "econ" && e.date === "2026-04-08")!; // econ's own post-split print
+  const topicMarks: TopicMark[] = [
+    { id: "tm-shared", entryId: reassigned.id, topicId: "t-econ", scorePct: 80 },
+    { id: "tm-own", entryId: untouched.id, topicId: "t-econ", scorePct: 90 },
+  ];
+
+  it("previews the count of topic marks the merge would drop, before it is applied", () => {
+    expect(splitTopicMarkLoss(plan, entries, topicMarks)).toBe(1);
+  });
+
+  it("previews zero when there are no topic marks at all", () => {
+    expect(splitTopicMarkLoss(plan, entries, undefined)).toBe(0);
+    expect(splitTopicMarkLoss(plan, entries, [])).toBe(0);
+  });
+
+  it("drops exactly the topic marks whose entry gets reassigned to the ancestor, keeping every other mark", () => {
+    const out = applySplit({ subjects: [econ, bus], entries, topicMarks }, plan, "BEA");
+    expect(out.topicMarks).toEqual([topicMarks[1]]);
+  });
+
+  it("leaves topicMarks untouched (undefined) when the book carries none", () => {
+    const out = applySplit<{ subjects: Subject[]; entries: GradeEntry[]; topicMarks?: TopicMark[] }>(
+      { subjects: [econ, bus], entries },
+      plan,
+      "BEA",
+    );
+    expect(out.topicMarks).toBeUndefined();
   });
 });

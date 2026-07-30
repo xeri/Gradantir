@@ -16,10 +16,15 @@ import type { SplitPlan } from "../lib/lineage";
  */
 export function SplitBanner({
   plan,
+  topicMarkLoss = 0,
   onMerge,
   onDismiss,
 }: {
   plan: SplitPlan;
+  /** Topic marks the merge will drop — filed against a shared print whose
+   *  topic never moves off the member desk (A3 review finding). Told to the
+   *  student BEFORE they click merge, not after a silent loss on next load. */
+  topicMarkLoss?: number;
   onMerge: (ticker: string, name: string) => void;
   onDismiss: () => void;
 }) {
@@ -97,6 +102,13 @@ export function SplitBanner({
           MERGING MOVES THOSE {plan.shared.length} RESULTS TO THE OLD DESK AND KEEPS ONE COPY —
           {" "}{list} EACH KEEP EVERYTHING THEY PRINTED SINCE, AND STILL CHART THE YEARS BEHIND THEM.
         </p>
+        {topicMarkLoss > 0 && (
+          <p className="mt-1" style={{ ...microLabel, color: C.down }}>
+            IT ALSO DROPS {topicMarkLoss} TOPIC MARK{topicMarkLoss === 1 ? "" : "S"} FILED AGAINST THOSE SHARED
+            RESULTS — THEIR TOPICS STAY ON THE ORIGINAL DESK, SO THE MARK CAN NO LONGER RESOLVE ONCE THE RESULT
+            MOVES TO THE OLD DESK.
+          </p>
+        )}
       </div>
     </div>
   );

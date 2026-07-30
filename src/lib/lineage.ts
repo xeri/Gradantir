@@ -1,7 +1,7 @@
 import { DEFAULT_CALENDAR, type SchoolCalendar } from "./calendar";
 import { closeTermOf, listedAt } from "./listing";
 import { uid } from "./utils";
-import type { GradeEntry, Subject } from "../types";
+import type { GradeEntry, Subject, TopicMark } from "../types";
 
 /**
  * LINEAGE — one desk becoming another, or becoming two.
@@ -359,11 +359,51 @@ export function detectSplits(
 /* ── the merge ─────────────────────────────────────────────────────── */
 
 /**
+ * The ids of the eldest member's OWN entries that survive the merge under the
+ * ancestor's id (see `applySplit`) — the entries whose `subjectId` changes
+ * while their `id` does not. Shared between `applySplit` (which drops the
+ * topic marks that hang off these ids) and `splitTopicMarkLoss` (which
+ * previews that same count before the merge is applied), so the two can
+ * never disagree about which marks are about to go.
+ */
+function eldestSharedEntryIds(plan: SplitPlan, entries: GradeEntry[]): Set<string> {
+  const eldest = plan.members[0];
+  const sharedSigs = new Set(plan.shared.map(sig));
+  return new Set(entries.filter((e) => e.subjectId === eldest.id && sharedSigs.has(sig(e))).map((e) => e.id));
+}
+
+/**
+ * Preview, before the merge runs, how many topic marks `applySplit` is about
+ * to drop — A3 review finding. A shared print moves to the ancestor desk
+ * keeping its own id, but its topic marks stay filed under the dual FK
+ * (entryId, topicId), and the topic itself never moves off the member desk:
+ * after the merge, `entrySubjectOf(entryId)` reads the ancestor while
+ * `topicSubjectOf(topicId)` still reads the member, so `sanitizeTopicMark`
+ * (io.ts) silently drops exactly those rows on the very next load. Surfacing
+ * the count HERE — before the student clicks merge — is what lets
+ * `SplitBanner` tell them before they act, rather than after.
+ */
+export function splitTopicMarkLoss(plan: SplitPlan, entries: GradeEntry[], topicMarks: TopicMark[] | undefined): number {
+  if (!topicMarks || !topicMarks.length) return 0;
+  const reassigned = eldestSharedEntryIds(plan, entries);
+  if (!reassigned.size) return 0;
+  return topicMarks.filter((m) => reassigned.has(m.entryId)).length;
+}
+
+/**
  * Collapse a detected split into one ancestor: the shared prints move to a new
  * archived desk, each member keeps only what it reported on its own, and every
  * member points back at the ancestor.
+ *
+ * The entries that move keep their own id, but their topic marks do not
+ * survive the move: `sanitizeTopicMark`'s dual FK would drop them on the next
+ * load anyway (A3 review finding — see `splitTopicMarkLoss`'s doc comment),
+ * so this drops them HERE, explicitly, rather than letting them rot silently
+ * until a reload. `topicMarks` rides through unmodified — not even to `[]` —
+ * when the incoming data does not carry the slice at all, so a caller that
+ * never passed one gets `undefined` back, not a slice it never had.
  */
-export function applySplit<T extends { subjects: Subject[]; entries: GradeEntry[] }>(
+export function applySplit<T extends { subjects: Subject[]; entries: GradeEntry[]; topicMarks?: TopicMark[] }>(
   data: T,
   plan: SplitPlan,
   ancestorTicker: string,
@@ -405,5 +445,11 @@ export function applySplit<T extends { subjects: Subject[]; entries: GradeEntry[
   const at = subjects.findIndex((s) => s.id === eldest.id);
   subjects.splice(at < 0 ? subjects.length : at, 0, ancestor);
 
-  return { ...data, subjects, entries };
+  // Computed from the ORIGINAL `data.entries` (before the loop above
+  // reassigns subjectId) — `eldestSharedEntryIds` reads entries whose
+  // `subjectId === eldest.id`, which is still true of the pre-merge rows.
+  const reassigned = eldestSharedEntryIds(plan, data.entries);
+  const topicMarks = data.topicMarks?.filter((m) => !reassigned.has(m.entryId));
+
+  return { ...data, subjects, entries, topicMarks };
 }

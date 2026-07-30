@@ -39,7 +39,7 @@ import { valueOfInformation } from "./lib/quant/signals/voi";
 import { classifyUpcoming } from "./lib/upcoming";
 import { fitDepth } from "./lib/quant/depth";
 import { listedAsOf } from "./lib/listing";
-import { applySplit, detectSplits, supersededBy } from "./lib/lineage";
+import { applySplit, detectSplits, splitTopicMarkLoss, supersededBy } from "./lib/lineage";
 import { clearQuarantine, loadData, quarantinedRaw, saveData } from "./lib/storage";
 import { clearSection, removeFromBook, type SectionKey } from "./lib/ledger";
 import { makeSample } from "./lib/sample";
@@ -785,7 +785,13 @@ export default function App() {
             plan ONCE, so resolving one split and dropping straight into the next
             would otherwise carry the first ancestor's name onto the second. */}
         {splits[0] && (
-          <SplitBanner key={splits[0].key} plan={splits[0]} onMerge={mergeSplit} onDismiss={dismissSplit} />
+          <SplitBanner
+            key={splits[0].key}
+            plan={splits[0]}
+            topicMarkLoss={splitTopicMarkLoss(splits[0], data.entries, data.topicMarks)}
+            onMerge={mergeSplit}
+            onDismiss={dismissSplit}
+          />
         )}
 
         {/* NOTHING IS BEING KEPT. `setItem` does not only throw on a full
