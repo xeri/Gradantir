@@ -22,15 +22,19 @@
  * ±SIGNAL_ADJ_CAP clamp, the per-term breakdown no longer sums to `adj` —
  * each term is still an honest read on its own, but the total is not their
  * plain sum. `signal.adjust`'s clamp step says so explicitly whenever the
- * clamp is actually binding, rather than implying an additivity the engine
- * does not have.
+ * clamp is actually binding (tested EXACTLY off `adj` itself — see the
+ * function below — never off a re-summed `terms`, which would silently
+ * disagree with `signalRead`'s own pre-clamp total whenever a candidate
+ * fell under the 0.05pt display floor), rather than implying an additivity
+ * the engine does not have.
  */
 
 import { creditSteps } from "./earned";
-import { fmt, sgn, v, type Derivation, type DeriveCtx } from "./types";
+import { fmt, sgn, v, type Derivation, type DerivationInput, type DeriveCtx } from "./types";
 import { SIGNAL_CAP, SIGNAL_KAPPA, SIGNAL_PRIOR } from "../quant/params";
 import {
-  MASTERY_MIN_MARKS, MASTERY_SCALE, MASTERY_W, SIGNAL_ADJ_CAP, STOCK_FLOOR, STOCK_W, VOI_EFFORT_SCALE, halfLifeOf,
+  MASTERY_MIN_MARKS, MASTERY_SCALE, MASTERY_W, QUALITY, SIGNAL_ADJ_CAP, STOCK_FLOOR, STOCK_W, VOI_EFFORT_SCALE,
+  halfLifeOf,
 } from "../quant/signals/params";
 
 /** Mirrors `views/signals/index.tsx`'s own `fmtPts` exactly, so a derivation's
@@ -47,31 +51,50 @@ export function signalAdjust(ctx: DeriveCtx): Derivation | null {
   if (!s || !read || !fit) return null;
   const on = ctx.settings?.signalWeighting !== false;
 
-  const shownSum = read.terms.reduce((a, t) => a + t.pts, 0);
-  const clampBinds = Math.abs(shownSum) > SIGNAL_ADJ_CAP + 0.005;
+  // adj IS round2(clip(rawSum, -CAP, CAP)) — so this is the EXACT test for
+  // whether the clamp actually bound, off the one field signalRead already
+  // computed it from. Re-summing `terms` (which drops anything under the
+  // 0.05pt display floor) would silently understate the true pre-clamp total
+  // and could miss a clamp that a handful of sub-floor terms alone pushed
+  // over the line.
+  const clampBinds = Math.abs(read.adj) >= SIGNAL_ADJ_CAP;
   const rows = read.terms.length
     ? read.terms.map((t) => `\\text{${t.key.toUpperCase()}} & ${sgn(t.pts, 2)} \\\\`).join(" ")
     : `\\text{(no term clears the 0.05pt floor)} & ${fmt(0, 2)} \\\\`;
   const wAdj = fit.w * read.adj;
 
+  // The ADJ cell and the W·ADJ cell both open this SAME walkthrough, but they
+  // show DIFFERENT figures — types.ts's load-bearing invariant is that
+  // result.value equals the number the interface displays for THIS figure, so
+  // the headline switches on which cell asked (ctx.key), not just the steps.
+  const headlineAdj = ctx.key === "adj";
+  const resultSym = headlineAdj ? "\\text{adj}" : "w\\cdot\\text{adj}";
+  // Both branches use `fmtPts` — exactly the formatting the ADJ and W·ADJ
+  // table cells themselves use (views/signals/index.tsx) — never `sgn`,
+  // which prints a leading "+0.00" at zero where the interface prints a bare
+  // "0.00"; a mismatched sign there would itself violate the invariant this
+  // fix exists to restore.
+  const resultVal = headlineAdj ? fmtPts(read.adj) : fmtPts(wAdj);
+
   return {
     id: "signal.adjust",
-    title: "LIFE SIGNALS · TERMS \u2192 W\u00b7ADJ",
-    symbol: "w\\cdot\\text{adj}",
-    claim:
-      "WHAT YOUR LOGGED STATE IS WORTH ON THE HOUSE'S OWN NEXT-EXAM MEAN, ONCE THE CHANNEL HAS EARNED THE RIGHT TO MOVE IT.",
+    title: headlineAdj ? "LIFE SIGNALS · TERMS \u2192 ADJ" : "LIFE SIGNALS · TERMS \u2192 W\u00b7ADJ",
+    symbol: resultSym,
+    claim: headlineAdj
+      ? "THE DESK'S OWN CLAMPED SHIFT \u2014 WHAT YOUR LOGGED STATE ADDS UP TO, BEFORE THE EARNED WEIGHT DECIDES HOW MUCH OF IT ACTUALLY MOVES THE FORECAST."
+      : "WHAT YOUR LOGGED STATE IS WORTH ON THE HOUSE'S OWN NEXT-EXAM MEAN, ONCE THE CHANNEL HAS EARNED THE RIGHT TO MOVE IT.",
     steps: [
       {
         tex: `\\begin{array}{lr} \\textbf{term} & \\text{pts} \\\\ \\hline ${rows} \\end{array}`,
         note:
-          "EACH TERM IS A DEVIATION FROM THIS DESK'S OWN TRAILING NORM, NEVER A LEVEL — A CONSTANT HABIT (SAME HOURS, SAME SLEEP, SAME EVERY WEEK) PRICES EVERY CHANNEL TO ZERO. THE LAYER PAYS FOR CHANGE, NOT FOR THE HABIT ITSELF.",
+          "EACH TERM IS A DEVIATION FROM THIS DESK'S OWN TRAILING NORM, NEVER A LEVEL \u2014 A CONSTANT HABIT (SAME HOURS, SAME SLEEP, SAME EVERY WEEK) PRICES EVERY CHANNEL TO ZERO. THE LAYER PAYS FOR CHANGE, NOT FOR THE HABIT ITSELF. ONLY TERMS \u2265 0.05PT ARE LISTED \u2014 A SMALLER CONTRIBUTOR CAN STILL SIT INSIDE \u03a3 BELOW WITHOUT EARNING A ROW OF ITS OWN.",
       },
       {
-        tex: `\\text{adj} \\;=\\; \\operatorname{clip}_{[-${SIGNAL_ADJ_CAP},\\,${SIGNAL_ADJ_CAP}]}\\!\\Big(\\textstyle\\sum_k \\pi_k\\Big)`,
-        subst: `\\textstyle\\sum_k \\pi_k \\;=\\; ${v(shownSum, 2)} \\;\\Longrightarrow\\; \\operatorname{clip}(${v(shownSum, 2)}) \\;=\\; ${v(read.adj, 2)}`,
+        tex: `\\text{adj} \\;=\\; \\operatorname{clip}_{[-${SIGNAL_ADJ_CAP},\\,${SIGNAL_ADJ_CAP}]}\\!\\big(\\Sigma\\big), \\qquad \\Sigma \\;=\\; \\text{sum of every candidate this desk fired, floor or no floor}`,
+        subst: `\\Sigma \\;=\\; ${v(read.rawSum, 2)} \\;\\Longrightarrow\\; \\operatorname{clip}(${v(read.rawSum, 2)}) \\;=\\; ${v(read.adj, 2)}`,
         note: clampBinds
-          ? "THE CLAMP IS BINDING HERE. ONCE TWO OR MORE TERMS JOINTLY REACH IT, THE ROW ABOVE NO LONGER SUMS TO ADJ — EACH TERM IS STILL AN HONEST READ ON ITS OWN, BUT THE CLAMPED TOTAL IS NOT THEIR PLAIN SUM. (THE PER-DESK TABLE'S OWN MARGINAL COLUMN DIFFERS AGAIN — IT IS adj(FULL) \u2212 adj(DROPPED), NOT THE RAW TERM ABOVE.)"
-          : "TERMS UNDER THE 0.05PT DISPLAY FLOOR ARE OMITTED ABOVE BUT STILL COUNTED INTO THE SUM THE CLAMP ACTS ON.",
+          ? `THE CLAMP IS BINDING HERE \u2014 |\\Sigma| CLEARS \u00b1${SIGNAL_ADJ_CAP} PTS, SO THE ROWS ABOVE NO LONGER SUM TO ADJ. EACH TERM IS STILL AN HONEST READ ON ITS OWN, BUT THE CLAMPED TOTAL IS NOT THEIR PLAIN SUM. (THE PER-DESK TABLE'S OWN MARGINAL COLUMN DIFFERS AGAIN \u2014 IT IS adj(FULL) \u2212 adj(DROPPED), NOT THE RAW TERM ABOVE.)`
+          : "\u03a3 CAN SIT SLIGHTLY BEYOND THE VISIBLE ROWS' OWN TOTAL \u2014 A CONTRIBUTOR UNDER THE 0.05PT DISPLAY FLOOR (A MILD ATTENDANCE SHAVE, AN UNROUNDED ANXIETY TERM) STILL COUNTS TOWARD \u03a3 EVEN THOUGH IT EARNED NO ROW OF ITS OWN.",
       },
       ...creditSteps(fit, { kappa: SIGNAL_KAPPA, cap: SIGNAL_CAP, toward: SIGNAL_PRIOR, unit: "CRPS" }),
       {
@@ -88,14 +111,14 @@ export function signalAdjust(ctx: DeriveCtx): Derivation | null {
       },
     ],
     inputs: [
-      { sym: "\\textstyle\\sum_k\\pi_k", label: "raw term sum", value: sgn(shownSum, 2) },
+      { sym: "\\Sigma", label: "raw sum, pre-clamp", value: sgn(read.rawSum, 2) },
       { sym: "\\text{adj}", label: "clamped shift", value: sgn(read.adj, 2) },
       { sym: "w", label: "earned weight", value: `${Math.round(fit.w * 100)}%` },
       { sym: "w\\cdot\\text{adj}", label: "applied shift", value: fmtPts(wAdj) },
       { sym: "\\text{sdMult}", label: "band multiplier", value: fmt(read.sdMult, 2) },
       { sym: "n", label: "terms clearing the floor", value: String(read.terms.length) },
     ],
-    result: { tex: "w\\cdot\\text{adj}", value: fmtPts(wAdj), unit: "PTS" },
+    result: { tex: resultSym, value: resultVal, unit: "PTS" },
     gates: [
       { text: "the channel is switched on", pass: on },
       { text: `clamped within \u00b1${SIGNAL_ADJ_CAP} pts`, pass: Math.abs(read.adj) <= SIGNAL_ADJ_CAP },
@@ -125,17 +148,17 @@ export function signalStock(ctx: DeriveCtx): Derivation | null {
       "HOW MUCH QUALITY-WEIGHTED STUDY YOU HAVE ACTUALLY BANKED LATELY, AGAINST YOUR OWN TRAILING RATE \u2014 NEVER AGAINST ANOTHER DESK.",
     steps: [
       {
-        tex: `k_{14} \\;=\\; \\sum_i \\text{minutes}_i\\cdot Q(\\text{kind}_i)\\cdot\\text{spacing}_i\\cdot\\text{encoding}_i\\cdot e^{-\\ln 2\\,\\Delta_i / H}`,
-        note: `EVERY SESSION IS QUALITY-WEIGHTED (RECALL AT 2.0\u00d7, READING AT 0.8\u00d7), SPACED (A REPEAT 1-7D LATER EARNS A SMALL BUMP) AND DOCKED WHEN THE NIGHT BEFORE RAN SHORT \u2014 THEN DECAYED TO asOf ON A HALF-LIFE H = ${fmt(H, 0)}D SET BY THIS SUBJECT'S OWN KNOWLEDGE/PROCEDURE/SKILL MIX.`,
+        tex: `k_{14} \\;=\\; \\sum_{i\\,:\\,0\\le\\Delta_i\\le13} \\text{minutes}_i\\cdot Q(\\text{kind}_i)\\cdot\\text{spacing}_i\\cdot\\text{encoding}_i\\cdot e^{-\\ln 2\\,\\Delta_i / H}, \\qquad \\Delta_i \\;=\\; \\text{days, session } i \\text{ to asOf}`,
+        note: `EVERY SESSION IS QUALITY-WEIGHTED (RECALL AT ${QUALITY.recall.toFixed(1)}\u00d7, READING AT ${QUALITY.reading.toFixed(1)}\u00d7), SPACED (A REPEAT 1-7D LATER EARNS A SMALL BUMP) AND DOCKED WHEN THE NIGHT BEFORE RAN SHORT \u2014 THEN DECAYED TO asOf ON A HALF-LIFE H = ${fmt(H, 0)}D SET BY THIS SUBJECT'S OWN KNOWLEDGE/PROCEDURE/SKILL MIX.`,
       },
       {
-        tex: `\\text{baseline} \\;=\\; \\frac{1}{42}\\Big(\\textstyle\\sum_{15\\le\\Delta\\le56} \\text{effMin}\\Big)\\cdot D(H), \\qquad D(H) \\;=\\; \\textstyle\\sum_{d=0}^{13} e^{-\\ln2\\,d/H}`,
+        tex: `\\text{baseline} \\;=\\; \\frac{1}{42}\\Big(\\textstyle\\sum_{i\\,:\\,14\\le\\Delta_i\\le55} \\text{effMin}_i\\Big)\\cdot D(H), \\qquad D(H) \\;=\\; \\textstyle\\sum_{d=0}^{13} e^{-\\ln2\\,d/H}`,
         subst:
           stock.baseline == null
             ? undefined
             : `\\text{baseline} \\;=\\; ${v(stock.baseline, 1)}\\;\\text{min (same decayed units as }k_{14}\\text{)}`,
         note:
-          "THE 42-DAY-PRIOR RATE, PROJECTED THROUGH THE SAME DECAY KERNEL AS k\u2081\u2084 \u2014 NOT A FLAT \u00d714 \u2014 SO A PERFECTLY STEADY HABIT READS k\u2081\u2084 \u2248 BASELINE AND TERM \u2248 0 AT ANY HALF-LIFE, RATHER THAN LOOKING COLD BY CONSTRUCTION.",
+          "THE SAME PER-SESSION \u0394\u1d62 (DAYS AGO) AS ABOVE, JUST OVER THE 14-55-DAYS-AGO WINDOW INSTEAD OF 0-13: THE 42-DAY-PRIOR RATE, PROJECTED THROUGH THE SAME DECAY KERNEL AS k\u2081\u2084 \u2014 NOT A FLAT \u00d714 \u2014 SO A PERFECTLY STEADY HABIT READS k\u2081\u2084 \u2248 BASELINE AND TERM \u2248 0 AT ANY HALF-LIFE, RATHER THAN LOOKING COLD BY CONSTRUCTION.",
       },
       {
         tex: `\\pi_{\\text{stock}} \\;=\\; ${STOCK_W}\\cdot\\tanh\\!\\left(\\frac{k_{14}-\\text{baseline}}{\\max(\\text{baseline},\\,${STOCK_FLOOR})}\\right)`,
@@ -144,7 +167,7 @@ export function signalStock(ctx: DeriveCtx): Derivation | null {
             ? undefined
             : `= ${STOCK_W}\\cdot\\tanh\\!\\left(\\frac{${v(stock.k14, 1)} - ${v(stock.baseline, 1)}}{${v(denom, 0)}}\\right) \\;=\\; ${v(stock.term, 2)}`,
         note:
-          "A SATURATING (tanh) READ: RUNNING TWICE YOUR OWN NORM IS NOT WORTH TWICE THE CREDIT, AND THE FLOOR IN THE DENOMINATOR KEEPS A NEAR-ZERO BASELINE FROM BLOWING THE RATIO UP ON A THIN WEEK. (THE STOCK COLUMN IN THE PER-DESK TABLE SHOWS THIS TERM'S MARGINAL CONTRIBUTION TO ADJ, WHICH CAN DIFFER FROM THIS RAW READ ONCE THE \u00b1${SIGNAL_ADJ_CAP} CLAMP BINDS.)",
+          `A SATURATING (tanh) READ: RUNNING TWICE YOUR OWN NORM IS NOT WORTH TWICE THE CREDIT, AND THE FLOOR IN THE DENOMINATOR KEEPS A NEAR-ZERO BASELINE FROM BLOWING THE RATIO UP ON A THIN WEEK. (THE STOCK COLUMN IN THE PER-DESK TABLE SHOWS THIS TERM'S MARGINAL CONTRIBUTION TO ADJ, WHICH CAN DIFFER FROM THIS RAW READ ONCE THE \u00b1${SIGNAL_ADJ_CAP} CLAMP BINDS.)`,
       },
     ],
     inputs: [
@@ -155,7 +178,7 @@ export function signalStock(ctx: DeriveCtx): Derivation | null {
       { sym: "h/\\text{wk}", label: "raw hours/wk", value: stock.hoursPerWeek == null ? "\u2014" : `${fmt(stock.hoursPerWeek, 1)}h`, missing: stock.hoursPerWeek == null },
     ],
     result: { tex: "\\pi_{\\text{stock}}", value: sgn(stock.term, 2), unit: "PTS" },
-    gates: [{ text: "\u2265 28 days of history and \u2265 3 sessions in the 15-56d baseline window", pass: stock.baseline != null }],
+    gates: [{ text: "\u2265 28 days of history and \u2265 3 sessions in the 14-55d baseline window", pass: stock.baseline != null }],
     related: ["signal.adjust", "signal.mastery"],
     source: "src/lib/quant/signals/stock.ts \u00b7 studyStock",
   };
@@ -174,8 +197,37 @@ export function signalMastery(ctx: DeriveCtx): Derivation | null {
   const nMarked = marked.length;
   const totalMarks = marked.reduce((a, t) => a + t.n, 0);
   const satFrac = Math.min(1, totalMarks / 6);
+  // `coverage` is round2(coveredMass) — the ENGINE's own gate (mastery.ts)
+  // reads the unrounded coveredMass, so a desk sitting exactly on the 0.3
+  // boundary (e.g. raw 0.2951, rounds to 0.30) can show a passing gate here
+  // for a term the engine actually zeroed. Narrow, cosmetic, and would need
+  // `coveredMass` itself plumbed through MasteryRead to close exactly —
+  // ledgered rather than fixed in this pass.
   const covered = mastery.coverage ?? 0;
+  // The attendance shave (mastery.ts's `coveredMassShaved`): under-attended
+  // mass that LOOKS covered by weight moves to the neutral side. Recomputed
+  // here from `attendancePct` (a plain Subject field, not an engine output)
+  // exactly as mastery.ts computes it — never a re-run of `masteryRead`.
+  const attendancePct = s.sub.attendancePct ?? null;
+  const shaved = attendancePct != null && attendancePct < 95;
+  const sAtt = shaved ? 1 - ((95 - attendancePct) / 100) * 0.5 : 1;
+  const coveredShaved = covered * sAtt;
   const priced = modelMean != null && mastery.predictedPaper != null && covered >= 0.3 && nMarked >= MASTERY_MIN_MARKS;
+
+  const inputs: DerivationInput[] = [
+    { sym: "\\text{coverage}", label: "weighted syllabus marked (raw)", value: mastery.coverage == null ? "\u2014" : `${Math.round(mastery.coverage * 100)}%`, missing: mastery.coverage == null },
+  ];
+  if (shaved) {
+    inputs.push({ sym: "s_{\\text{att}}", label: `attendance shave (${attendancePct}%)`, value: fmt(sAtt, 3) });
+    inputs.push({ sym: "\\text{coverage}\\cdot s_{\\text{att}}", label: "priced (shaved) coverage", value: `${Math.round(coveredShaved * 100)}%` });
+  }
+  inputs.push(
+    { sym: "\\text{predictedPaper}", label: "book's whole-paper call", value: mastery.predictedPaper == null ? "\u2014" : fmt(mastery.predictedPaper, 1), missing: mastery.predictedPaper == null },
+    { sym: "\\text{modelMean}", label: "house's own call", value: modelMean == null ? "\u2014" : fmt(modelMean, 1), missing: modelMean == null },
+    { sym: "n_{\\text{marked}}", label: "topics with a mark", value: String(nMarked) },
+    { sym: "\\text{marks}", label: "total marks folded in", value: String(totalMarks) },
+    { sym: "\\sigma_{\\text{uneven}}", label: "unevenness across topics", value: fmt(mastery.unevenness, 2) },
+  );
 
   return {
     id: "signal.mastery",
@@ -185,13 +237,18 @@ export function signalMastery(ctx: DeriveCtx): Derivation | null {
       "THE ONE SIGNAL THE ENGINE ACTUALLY MEASURES \u2014 MARKED TOPIC PERFORMANCE, ROLLED UP INTO A WHOLE-PAPER PREDICTION AND PRICED ONLY AS ITS DEVIATION FROM THE HOUSE'S OWN CALL.",
     steps: [
       {
-        tex: `P \\;=\\; \\underbrace{\\textstyle\\sum_{\\text{covered}} w_i\\,m^{\\text{eff}}_i}_{\\text{measured syllabus}} \\;+\\; \\underbrace{(1-\\text{coverage})\\cdot\\frac{\\text{modelMean}}{100}}_{\\text{unmeasured \u2014 NEUTRAL, not zero}}`,
+        tex: shaved
+          ? `P \\;=\\; \\underbrace{(\\text{coverage}\\cdot s_{\\text{att}})\\,\\bar m^{\\text{eff}}_{\\text{cov}}}_{\\text{measured, shaved}} \\;+\\; \\underbrace{\\big(1-\\text{coverage}\\cdot s_{\\text{att}}\\big)\\cdot\\frac{\\text{modelMean}}{100}}_{\\text{unmeasured \u2014 NEUTRAL}}, \\qquad s_{\\text{att}} \\;=\\; 1-\\frac{95-\\text{att\\%}}{100}\\cdot0.5`
+          : `P \\;=\\; \\underbrace{\\textstyle\\sum_{\\text{covered}} w_i\\,m^{\\text{eff}}_i}_{\\text{measured syllabus}} \\;+\\; \\underbrace{(1-\\text{coverage})\\cdot\\frac{\\text{modelMean}}{100}}_{\\text{unmeasured \u2014 NEUTRAL, not zero}}`,
         subst:
           mastery.predictedPaper != null
-            ? `\\text{predictedPaper} \\;=\\; 100P \\;=\\; ${v(mastery.predictedPaper, 1)} \\quad\\text{vs}\\quad \\text{modelMean} \\;=\\; ${modelMean == null ? "\\text{n/a}" : v(modelMean, 1)}`
+            ? shaved
+              ? `s_{\\text{att}} \\;=\\; ${v(sAtt, 3)} \\;\\Longrightarrow\\; \\text{predictedPaper} \\;=\\; 100P \\;=\\; ${v(mastery.predictedPaper, 1)} \\quad\\text{vs}\\quad \\text{modelMean} \\;=\\; ${modelMean == null ? "\\text{n/a}" : v(modelMean, 1)}`
+              : `\\text{predictedPaper} \\;=\\; 100P \\;=\\; ${v(mastery.predictedPaper, 1)} \\quad\\text{vs}\\quad \\text{modelMean} \\;=\\; ${modelMean == null ? "\\text{n/a}" : v(modelMean, 1)}`
             : undefined,
-        note:
-          "AN UNTOUCHED TOPIC CARRIES THE MODEL'S OWN CALL, NOT A ZERO \u2014 A THIN BOOK NEVER MANUFACTURES A CHARGE OUT OF SYLLABUS NOBODY HAS TOUCHED YET. AN ATTENDANCE SHAVE MOVES MASS THAT LOOKS COVERED BY WEIGHT BUT WAS UNDER-ATTENDED BACK TO THE NEUTRAL SIDE.",
+        note: shaved
+          ? `THIS DESK'S ATTENDANCE (${attendancePct}%) SITS UNDER 95%, SO THE ATTENDANCE SHAVE IS LIVE: MASS THAT LOOKS COVERED BY WEIGHT BUT WAS UNDER-ATTENDED MOVES BACK TO THE NEUTRAL SIDE \u2014 THE PRICED COVERAGE IS coverage\u00d7s_att, NOT THE RAW coverage ROW ABOVE.`
+          : "AN UNTOUCHED TOPIC CARRIES THE MODEL'S OWN CALL, NOT A ZERO \u2014 A THIN BOOK NEVER MANUFACTURES A CHARGE OUT OF SYLLABUS NOBODY HAS TOUCHED YET. AN ATTENDANCE SHAVE (INACTIVE ON THIS DESK \u2014 ATTENDANCE IS AT OR ABOVE 95%) WOULD OTHERWISE MOVE MASS THAT LOOKS COVERED BY WEIGHT BUT WAS UNDER-ATTENDED BACK TO THE NEUTRAL SIDE.",
       },
       {
         tex: `\\pi_{\\text{mastery}} \\;=\\; ${MASTERY_W}\\cdot\\tanh\\!\\left(\\frac{\\text{predictedPaper}-\\text{modelMean}}{${MASTERY_SCALE}}\\right)\\cdot\\min\\!\\left(1,\\frac{\\text{marks}}{6}\\right)`,
@@ -199,17 +256,10 @@ export function signalMastery(ctx: DeriveCtx): Derivation | null {
           ? `= ${MASTERY_W}\\cdot\\tanh\\!\\left(\\frac{${v(mastery.predictedPaper as number, 1)} - ${v(modelMean as number, 1)}}{${MASTERY_SCALE}}\\right)\\cdot ${v(satFrac, 2)} \\;=\\; ${v(mastery.term, 2)}`
           : undefined,
         note:
-          "SATURATING, LIKE THE STOCK CHANNEL, AND ADDITIONALLY DAMPED BY HOW MANY MARKS ACTUALLY SUPPORT IT \u2014 SIX MARKED PAPERS BEFORE THE CHANNEL IS TRUSTED AT FULL WEIGHT.",
+          "SATURATING, LIKE THE STOCK CHANNEL, AND ADDITIONALLY DAMPED BY totalMarks (THE SUM OF PER-TOPIC MARKS FOLDED IN, WHICH CAN COME FROM ONE PAPER MARKED AGAINST SEVERAL TOPICS OR SEVERAL PAPERS AGAINST ONE) \u2014 SIX MARKS FOLDED IN BEFORE THE CHANNEL IS TRUSTED AT FULL WEIGHT.",
       },
     ],
-    inputs: [
-      { sym: "\\text{coverage}", label: "weighted syllabus marked", value: mastery.coverage == null ? "\u2014" : `${Math.round(mastery.coverage * 100)}%`, missing: mastery.coverage == null },
-      { sym: "\\text{predictedPaper}", label: "book's whole-paper call", value: mastery.predictedPaper == null ? "\u2014" : fmt(mastery.predictedPaper, 1), missing: mastery.predictedPaper == null },
-      { sym: "\\text{modelMean}", label: "house's own call", value: modelMean == null ? "\u2014" : fmt(modelMean, 1), missing: modelMean == null },
-      { sym: "n_{\\text{marked}}", label: "topics with a mark", value: String(nMarked) },
-      { sym: "\\text{marks}", label: "total marks folded in", value: String(totalMarks) },
-      { sym: "\\sigma_{\\text{uneven}}", label: "unevenness across topics", value: fmt(mastery.unevenness, 2) },
-    ],
+    inputs,
     result: { tex: "\\pi_{\\text{mastery}}", value: sgn(mastery.term, 2), unit: "PTS" },
     gates: [
       { text: "\u2265 30% of the weighted syllabus covered by at least one mark", pass: covered >= 0.3 },

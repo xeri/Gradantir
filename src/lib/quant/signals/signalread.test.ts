@@ -99,18 +99,18 @@ const TR = (over: Partial<SubjectTraits> = {}): SubjectTraits => ({
 describe("signalRead — empty-book identity", () => {
   it("adj 0, sdMult 1, terms [] with no data at all", () => {
     const out = signalRead(SUB(), emptySignalBook, [], null, null, ASOF);
-    expect(out).toEqual({ subjectId: "s1", adj: 0, sdMult: 1, terms: [], reasons: [] });
+    expect(out).toEqual({ subjectId: "s1", adj: 0, rawSum: 0, sdMult: 1, terms: [], reasons: [] });
   });
 
   it("holds even with a live upcoming sitting present", () => {
     const next = { date: addDays(ASOF, 5), hour: 10, weight: 40 };
     const out = signalRead(SUB(), emptySignalBook, [], next, null, ASOF);
-    expect(out).toEqual({ subjectId: "s1", adj: 0, sdMult: 1, terms: [], reasons: [] });
+    expect(out).toEqual({ subjectId: "s1", adj: 0, rawSum: 0, sdMult: 1, terms: [], reasons: [] });
   });
 
   it("holds with a modelMean supplied and no signal data", () => {
     const out = signalRead(SUB(), emptySignalBook, [], null, 65, ASOF);
-    expect(out).toEqual({ subjectId: "s1", adj: 0, sdMult: 1, terms: [], reasons: [] });
+    expect(out).toEqual({ subjectId: "s1", adj: 0, rawSum: 0, sdMult: 1, terms: [], reasons: [] });
   });
 });
 
@@ -350,7 +350,7 @@ describe("signalBoard", () => {
     // s2's only Exam carries no hour -> chronotype cannot fire.
     expect(board.get("s2")!.terms.some((t) => t.key === "chronotype")).toBe(false);
     // s3 has no upcoming at all -> identity.
-    expect(board.get("s3")).toEqual({ subjectId: "s3", adj: 0, sdMult: 1, terms: [], reasons: [] });
+    expect(board.get("s3")).toEqual({ subjectId: "s3", adj: 0, rawSum: 0, sdMult: 1, terms: [], reasons: [] });
   });
 });
 

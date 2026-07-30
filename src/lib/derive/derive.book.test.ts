@@ -176,10 +176,18 @@ const signalStockOf: Record<string, StockRead> = {};
 const signalMasteryOf: Record<string, MasteryRead> = {};
 const signalModelMeanOf: Record<string, number | null> = {};
 for (const sub of active) {
-  signalStockOf[sub.id] = studyStock(signalBook.sessions, signalBook.rest, sub.mix ?? null, TODAY);
-  const masteries = topicMastery(signalBook.topics, signalBook.topicMarks, signalBook.sessions, entries, sub.traits ?? null, sub.mix ?? null, TODAY);
+  // Filtered by subjectId, mirroring the SIGNALS view's own `stockBySubject`/
+  // `masteryBySubject` memos exactly (views/signals/index.tsx) — identical to
+  // passing the whole (empty) book on this fixture, but this harness should
+  // not silently stop matching the view it reconciles against.
+  const subjSessions = signalBook.sessions.filter((sess) => sess.subjectId === sub.id);
+  const subjTopics = signalBook.topics.filter((t) => t.subjectId === sub.id);
+  const subjTopicIds = new Set(subjTopics.map((t) => t.id));
+  const subjMarks = signalBook.topicMarks.filter((mk) => subjTopicIds.has(mk.topicId));
+  signalStockOf[sub.id] = studyStock(subjSessions, signalBook.rest, sub.mix ?? null, TODAY);
+  const masteries = topicMastery(subjTopics, subjMarks, subjSessions, entries, sub.traits ?? null, sub.mix ?? null, TODAY);
   const mm = signalModelMeans.get(sub.id) ?? null;
-  signalMasteryOf[sub.id] = masteryRead(signalBook.topics, masteries, mm, sub.attendancePct ?? null, TODAY);
+  signalMasteryOf[sub.id] = masteryRead(subjTopics, masteries, mm, sub.attendancePct ?? null, TODAY);
   signalModelMeanOf[sub.id] = mm;
 }
 const signalCardFacts: ScorecardFacts = {

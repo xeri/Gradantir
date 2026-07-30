@@ -25,6 +25,7 @@ const stat = (id: string, quant: { nextExam: NextExamForecast } | null): Subject
 const read = (over: Partial<SignalRead>): SignalRead => ({
   subjectId: "s1",
   adj: 0,
+  rawSum: 0,
   sdMult: 1,
   terms: [],
   reasons: [],

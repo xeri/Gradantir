@@ -29,8 +29,8 @@ import { timeErrorShareOf, traitSdMult } from "./traits";
  * The load-bearing invariant: on an EMPTY book (no signal data logged) and a
  * subject with no traits/mix/belief/attendance set, every path — including
  * one with a live upcoming sitting — collapses to the identity: adj 0,
- * sdMult 1, terms []. A book that has never touched this feature must read
- * exactly as it did before the feature existed.
+ * rawSum 0, sdMult 1, terms []. A book that has never touched this feature
+ * must read exactly as it did before the feature existed.
  */
 
 export type SignalTermKey =
@@ -52,6 +52,16 @@ export interface SignalRead {
   subjectId: string;
   /** clamp(sum of term pts, -SIGNAL_ADJ_CAP, +SIGNAL_ADJ_CAP), 2dp. */
   adj: number;
+  /**
+   * The UNCLAMPED, UNFILTERED sum every candidate channel contributed —
+   * `adj` before `clamp`, and before `terms` drops anything under the 0.05pt
+   * display floor. Exposed so a derivation (or anything else that needs to
+   * show its work) can quote the exact figure the clamp actually acted on,
+   * rather than re-summing `terms` and silently mis-stating it whenever a
+   * sub-floor contribution (routine: a mild attendance shave, an unrounded
+   * anxiety term) is part of the true total but not part of the visible rows.
+   */
+  rawSum: number;
   /** From traitSdMult, >= 1. */
   sdMult: number;
   /** Only terms with |pts| >= 0.05, sorted harshest first. */
@@ -234,6 +244,7 @@ export function signalRead(
   return {
     subjectId: sub.id,
     adj,
+    rawSum: sum,
     sdMult,
     terms,
     reasons: terms.map((t) => t.note),
