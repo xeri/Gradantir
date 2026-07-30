@@ -47,9 +47,12 @@ describe("VoiPanel — renders the ranker's own copy verbatim", () => {
   });
 
   it("keeps the ranker's own score-desc order rather than re-sorting", () => {
+    // Deliberately non-monotonic: the LOWER-scoring item is listed first. A
+    // panel that (wrongly) re-sorted by score desc would flip this order —
+    // two same-score fixtures would pass either way and miss that bug.
     const items: VoiItem[] = [
-      item({ domain: "rest", action: "FIRST ITEM ACTION" }),
-      item({ domain: "profile", action: "SECOND ITEM ACTION" }),
+      item({ domain: "rest", action: "FIRST ITEM ACTION", score: 0.5 }),
+      item({ domain: "profile", action: "SECOND ITEM ACTION", score: 3.075 }),
     ];
     const html = renderToStaticMarkup(<VoiPanel items={items} />);
     expect(html.indexOf("FIRST ITEM ACTION")).toBeLessThan(html.indexOf("SECOND ITEM ACTION"));

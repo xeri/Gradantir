@@ -100,4 +100,14 @@ describe("the signals shell on an untouched book", () => {
     expect(html).toMatch(/aria-checked="false"/);
     expect(html).toContain("OUT OF THE PRICING");
   });
+
+  it("mounts the VOI panel and prints the ranker's own bootstrap items on this untouched book", () => {
+    // This book has never touched rest/profile/sessions, so the ranker's
+    // bootstrap heuristics genuinely fire (voi.ts) — guard the fixture itself
+    // isn't accidentally empty before trusting the shell assertions below.
+    expect(voi.length).toBeGreaterThan(0);
+    const html = render();
+    expect(html).toContain("WHAT TO LOG NEXT");
+    for (const item of voi) expect(html).toContain(item.action);
+  });
 });

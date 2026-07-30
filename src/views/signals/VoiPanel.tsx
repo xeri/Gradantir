@@ -3,12 +3,12 @@ import type { VoiItem } from "../../lib/quant/signals/voi";
 
 /**
  * D5 · VOI PANEL — a READ-ONLY window onto `valueOfInformation`'s own ranked
- * output (voi.ts, T11): "what to log next" to buy the most forecast
- * precision per minute of logging effort. The same "the leaf renders, the
- * view computes" split every other SIGNALS leaf holds (`MasteryPanel`, the
- * per-term marginal table) — this component never calls `valueOfInformation`
- * itself, only renders the `VoiItem[]` App.tsx's own `voi` memo already
- * computed and ranked.
+ * output (voi.ts, T11): "what to log next" to buy forecast precision,
+ * weighed against the logging effort it costs. The same "the leaf renders,
+ * the view computes" split every other SIGNALS leaf holds (`MasteryPanel`,
+ * the per-term marginal table) — this component never calls
+ * `valueOfInformation` itself, only renders the `VoiItem[]` App.tsx's own
+ * `voi` memo already computed and ranked.
  *
  * Every `VoiItem.action` string is already terminal copy with its own
  * computed gain baked in (voi.ts's `plusMinus1`) — printed byte-for-byte,
@@ -36,7 +36,7 @@ export function VoiPanel({ items }: VoiPanelProps) {
     );
   }
   return (
-    <div className="space-y-0">
+    <div>
       {items.map((it, i) => (
         <div
           key={`${it.domain}-${it.subjectId ?? "book"}-${i}`}
@@ -53,7 +53,8 @@ export function VoiPanel({ items }: VoiPanelProps) {
         </div>
       ))}
       <p className="pt-2 text-[10px] uppercase tracking-wider leading-relaxed" style={{ ...microLabel, color: C.faint, letterSpacing: "0.06em", fontWeight: 400 }}>
-        RANKED BY FORECAST GAIN PER MINUTE OF LOGGING EFFORT — HIGHEST VALUE FIRST.
+        RANKED BY FORECAST GAIN WEIGHED AGAINST LOGGING EFFORT, WITH DIMINISHING RETURNS AS EFFORT GROWS — HIGHEST
+        VALUE FIRST, NOT A LITERAL PER-MINUTE RATE.
       </p>
     </div>
   );
