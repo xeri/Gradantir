@@ -299,30 +299,40 @@ export function reviewWire(
  */
 export function rehydrateSubjects(payload: ImportPayload, current: AppData): ImportPayload {
   const held = new Map(current.subjects.map((s) => [s.id, s]));
-  return {
-    ...payload,
-    subjects: payload.subjects.map((s) => {
-      const cur = held.get(s.id);
-      if (!cur || !sameDesk(cur, s)) return s;
-      const formerly = s.formerly ?? cur.formerly;
-      const traits = s.traits ?? cur.traits;
-      const mix = s.mix ?? cur.mix;
-      const belief = s.belief ?? cur.belief;
-      const attendancePct = s.attendancePct ?? cur.attendancePct;
-      return {
-        ...s,
-        color: cur.color,
-        target: s.target ?? cur.target,
-        courseworkPct: s.courseworkPct ?? cur.courseworkPct,
-        ...(formerly ? { formerly } : {}),
-        ...(s.archived || cur.archived ? { archived: true } : {}),
-        ...(traits ? { traits } : {}),
-        ...(mix ? { mix } : {}),
-        ...(belief != null ? { belief } : {}),
-        ...(attendancePct != null ? { attendancePct } : {}),
-      };
-    }),
-  };
+  const subjects = payload.subjects.map((s) => {
+    const cur = held.get(s.id);
+    if (!cur || !sameDesk(cur, s)) return s;
+    const formerly = s.formerly ?? cur.formerly;
+    const traits = s.traits ?? cur.traits;
+    const mix = s.mix ?? cur.mix;
+    const belief = s.belief ?? cur.belief;
+    const attendancePct = s.attendancePct ?? cur.attendancePct;
+    return {
+      ...s,
+      color: cur.color,
+      target: s.target ?? cur.target,
+      courseworkPct: s.courseworkPct ?? cur.courseworkPct,
+      ...(formerly ? { formerly } : {}),
+      ...(s.archived || cur.archived ? { archived: true } : {}),
+      ...(traits ? { traits } : {}),
+      ...(mix ? { mix } : {}),
+      ...(belief != null ? { belief } : {}),
+      ...(attendancePct != null ? { attendancePct } : {}),
+    };
+  });
+  // B4 review finding: `sanitizeBook` cuts a `formerly` pointing outside the
+  // roster (io.ts), but that runs INSIDE `parseImport`, before this function
+  // ever restores anything — so a formerly rehydrated from the CURRENT book
+  // can point at a desk this payload's own roster does not contain (an
+  // ancestor the reply never echoed). On the REPLACE path that ancestor is
+  // discarded entirely, and the successor would ship pointing at a desk not
+  // in the book — `assertLineageIntact` only warns, silently, in production.
+  // Re-running the same dangling-pointer cut over the PAYLOAD's own roster
+  // (not the current book's) closes it exactly the way `sanitizeBook` would
+  // have, had the pointer existed before parseImport ran.
+  const ids = new Set(subjects.map((s) => s.id));
+  const cut = subjects.map((s) => (s.formerly && !ids.has(s.formerly) ? { ...s, formerly: null } : s));
+  return { ...payload, subjects: cut };
 }
 
 export function filterPayload(
@@ -353,6 +363,18 @@ export function filterPayload(
     : [];
   return {
     ...payload,
+    // B1 review finding: `parseImport` (which the wire path reuses wholesale)
+    // reads a top-level "settings" key unconditionally, and `sanitizeSettings`
+    // builds a COMPLETE, valid Settings object from whatever survives — so a
+    // bare `"settings": {}`, or any partial echo, would hand `mergeData` a
+    // full replacement for the school calendar, per-type weights,
+    // `ignoredSplits`, `subjectCorr`, `depth` and every pricing switch,
+    // invisibly: `WireRaw` carries no settings field, the review manifest has
+    // no row for it, and no toggle here ever named it. The wire path can
+    // never carry a settings replacement — only the file-import path (the
+    // student's own export) may still replace them, via `replaceData`/
+    // `mergeData` reading `ImportPayload.settings` directly, outside this fn.
+    settings: null,
     entries: keep("entries") ? payload.entries : [],
     upcoming,
     allocations: keep("allocations") ? payload.allocations : [],

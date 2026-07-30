@@ -436,6 +436,27 @@ describe("reviewWire", () => {
     expect(merged.subjects.find((s) => s.id === "s-lit")?.archived).toBe(true);
   });
 
+  it("does not reintroduce a dangling formerly pointer on the REPLACE path (B4 review finding)", () => {
+    // `sanitizeBook` cuts a `formerly` pointing outside the roster (io.ts),
+    // but that check runs INSIDE `parseImport`, before rehydration ever sees
+    // the row — so rehydrate can restore a pointer parseImport had every
+    // right to consider dangling. Here the reply echoes only the successor
+    // (s-eng), never its ancestor (s-lit): on a REPLACE, s-lit is about to be
+    // discarded entirely, since it is not in this payload's own roster.
+    const parseEcho = (subjects: object[]): ImportPayload => {
+      const res = parseImport(JSON.stringify({ app: "grade-exchange", data: { subjects, entries: [] } }));
+      if (!res.ok) throw new Error("fixture failed");
+      return res.payload;
+    };
+    const fixed = rehydrateSubjects(parseEcho([{ id: "s-eng", name: "English", ticker: "ENG" }]), book);
+    const eng = fixed.subjects.find((s) => s.id === "s-eng")!;
+    // `book`'s own s-eng carries `formerly: "s-lit"` — rehydrate would
+    // otherwise restore exactly that from the CURRENT book, even though
+    // s-lit never appears in this payload's own roster and a replace would
+    // discard it, shipping s-eng pointing at a desk not in the book.
+    expect(eng.formerly).toBeNull();
+  });
+
   it("filterPayload strips sections and forecasts, never the roster", () => {
     const res = parseWire(JSON.stringify(EXAMPLE_PAYLOAD));
     if (!res.ok) throw new Error("fixture failed");
@@ -471,6 +492,30 @@ describe("reviewWire", () => {
     expect(kept.sessions.length).toBeGreaterThan(0);
     expect(kept.rest.length).toBeGreaterThan(0);
     expect(kept.disruptions.length).toBeGreaterThan(0);
+  });
+
+  it("filterPayload strips settings unconditionally — the wire path can never carry a whole-Settings replacement (B1 review finding)", () => {
+    // parseImport (which parseWire reuses wholesale) reads a top-level
+    // "settings" key unconditionally — a key the wire prompt never asks a
+    // model to emit, but nothing stops one from echoing or inventing it.
+    // sanitizeSettings then builds a COMPLETE, valid Settings object from
+    // whatever survives, so a bare `"settings": {}` (or any partial echo)
+    // hands mergeData a full replacement for the school calendar, per-type
+    // weights, ignoredSplits, subjectCorr, depth and every pricing switch —
+    // invisibly, since filterPayload never touched it, WireRaw has no
+    // settings field, and the review manifest has no row for it.
+    const withSettings = {
+      ...EXAMPLE_PAYLOAD,
+      data: { ...EXAMPLE_PAYLOAD.data, settings: { signalWeighting: false, aiWeighting: true } },
+    };
+    const res = parseWire(JSON.stringify(withSettings));
+    if (!res.ok) throw new Error("fixture failed");
+    // Confirms the premise: parseImport really did build a full Settings
+    // object from the echoed fragment — this is what filterPayload must
+    // neutralise before anything reaches the merge.
+    expect(res.payload.settings).not.toBeNull();
+    const filtered = filterPayload(res.payload, {}, false);
+    expect(filtered.settings).toBeNull();
   });
 
   it("filterPayload cascades: excluding topics (or entries) drops topicMarks too, even when topicMarks itself is kept", () => {
