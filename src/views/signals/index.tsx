@@ -5,9 +5,11 @@ import { PricedBanner } from "../../components/ui/PricedBanner";
 import { LogPanels } from "./LogPanels";
 import { MasteryPanel, type SubjectMasteryRead } from "./MasteryPanel";
 import { TraitsEditor, type SubjectTraitsPatch } from "./TraitsEditor";
+import { VoiPanel } from "./VoiPanel";
 import { signalRead, type NextSitting, type SignalBook, type SignalRead, type SignalTermKey } from "../../lib/quant/signals/signalread";
 import { topicMastery, masteryRead } from "../../lib/quant/signals/mastery";
 import type { SignalSkill } from "../../lib/quant/signals/signalskill";
+import type { VoiItem } from "../../lib/quant/signals/voi";
 import type { DisruptionKind, GradeEntry, Profile, SessionKind, SubjectStat, Upcoming } from "../../types";
 
 /**
@@ -89,6 +91,9 @@ export interface SignalsProps {
   signalFit: SignalSkill;
   signalOn: boolean;
   todayIso: string;
+  /** App's own `voi` memo (T18) — the VOI ranker's (T11) top-8 output,
+   *  already scored and sorted. Reused, never recomputed here. */
+  voi: VoiItem[];
   onSetSignalWeighting: (on: boolean) => void;
   onOpenSubject?: (id: string) => void;
   /** Quick-log intake (T16) — App.tsx assigns the id (`uid()`); every date is
@@ -111,7 +116,7 @@ export interface SignalsProps {
 }
 
 export function Signals({
-  stats, entries, upcoming, signalBook, signalReads, modelMeans, signalFit, signalOn, todayIso,
+  stats, entries, upcoming, signalBook, signalReads, modelMeans, signalFit, signalOn, todayIso, voi,
   onSetSignalWeighting, onOpenSubject, onLogSession, onLogRest, onLogDisruption,
   onAddTopic, onEditTopic, profile, onSaveTraits, onSaveProfile,
 }: SignalsProps) {
@@ -276,6 +281,10 @@ export function Signals({
           onSaveTraits={onSaveTraits}
           onSaveProfile={onSaveProfile}
         />
+      </Panel>
+
+      <Panel title="WHAT TO LOG NEXT — VOI">
+        <VoiPanel items={voi} />
       </Panel>
     </div>
   );

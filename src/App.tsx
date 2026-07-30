@@ -35,6 +35,7 @@ import { IDENTITY_AI_POOL, aiChargePts, fitAiWeight, poolBoardJoint } from "./li
 import { applySignals } from "./lib/quant/signals/apply";
 import { emptySignalBook, signalBoard, type SignalBook } from "./lib/quant/signals/signalread";
 import { NO_SIGNAL_SKILL, signalSkill } from "./lib/quant/signals/signalskill";
+import { valueOfInformation } from "./lib/quant/signals/voi";
 import { classifyUpcoming } from "./lib/upcoming";
 import { fitDepth } from "./lib/quant/depth";
 import { listedAsOf } from "./lib/listing";
@@ -314,6 +315,20 @@ export default function App() {
     const ids = new Set(visible.map((s) => s.sub.id));
     return data.entries.filter((e) => ids.has(e.subjectId));
   }, [data, visible]);
+
+  /* THE VOI RANKER (D5/T11) — App's own `voi` memo, the plan's last
+     composition slot Task 12 deliberately left open. Subjects: live desks
+     only (`liveSubs` — an archived desk earns no "log more" nudge). Desks:
+     this round's per-desk SD off `stats` (the house's own bias-corrected,
+     pre-signal board), mirroring `modelMeans`'s own convention one level up
+     but for the ranker's sd-scaled heuristics rather than the signal
+     engine's mean-shift term — built inline rather than a named memo, since
+     nothing else reads this particular map. */
+  const voi = useMemo(() => {
+    if (!data) return [];
+    const desks = new Map(stats.map((s) => [s.sub.id, s.quant?.nextExam.sd ?? null]));
+    return valueOfInformation(liveSubs, signalBook, desks, todayStr());
+  }, [data, stats, liveSubs, signalBook]);
 
   /* The three headline instruments: realized exams, the next round, the price
      index. All three read `booked` — a closed desk cannot report a stale exam
@@ -972,6 +987,7 @@ export default function App() {
                 signalFit={signalFit}
                 signalOn={data.settings.signalWeighting !== false}
                 todayIso={todayStr()}
+                voi={voi}
                 onSetSignalWeighting={setSignalWeighting}
                 onOpenSubject={setDrawerId}
                 onLogSession={logSession}

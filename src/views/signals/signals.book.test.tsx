@@ -6,6 +6,7 @@ import { computeStats } from "../../lib/stats";
 import { sanitizeSettings } from "../../lib/io";
 import { emptySignalBook, signalBoard } from "../../lib/quant/signals/signalread";
 import { NO_SIGNAL_SKILL } from "../../lib/quant/signals/signalskill";
+import { valueOfInformation } from "../../lib/quant/signals/voi";
 import type { AppData } from "../../types";
 
 /**
@@ -31,6 +32,9 @@ const stats = computeStats(base.subjects, base.entries, base.settings, TODAY);
 const signalBook = emptySignalBook;
 const modelMeans = new Map(stats.map((s) => [s.sub.id, s.quant?.nextExam.mean ?? null]));
 const signalReads = signalBoard(base.subjects, signalBook, base.entries, base.upcoming ?? [], modelMeans, TODAY);
+const liveSubs = stats.filter((s) => !s.sub.archived).map((s) => s.sub);
+const voiDesks = new Map(stats.map((s) => [s.sub.id, s.quant?.nextExam.sd ?? null]));
+const voi = valueOfInformation(liveSubs, signalBook, voiDesks, TODAY);
 
 function render(signalOn = true) {
   return renderToStaticMarkup(
@@ -44,6 +48,7 @@ function render(signalOn = true) {
       signalFit={NO_SIGNAL_SKILL}
       signalOn={signalOn}
       todayIso={TODAY}
+      voi={voi}
       onSetSignalWeighting={() => {}}
       onLogSession={() => {}}
       onLogRest={() => {}}
