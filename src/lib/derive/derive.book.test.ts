@@ -23,6 +23,11 @@ import { fitAiWeight } from "../quant/aipool";
 import { readinessSkill } from "../quant/readiness";
 import { classifyUpcoming } from "../upcoming";
 import { makeWeightFn } from "../weights";
+import { emptySignalBook, signalBoard } from "../quant/signals/signalread";
+import { signalSkill } from "../quant/signals/signalskill";
+import { studyStock, type StockRead } from "../quant/signals/stock";
+import { topicMastery, masteryRead, type MasteryRead } from "../quant/signals/mastery";
+import { valueOfInformation } from "../quant/signals/voi";
 import { CITATIONS } from "./cite";
 import { DERIVATION_IDS, derivationFor } from "./index";
 import type { ScorecardFacts } from "./facts";
@@ -151,6 +156,52 @@ const modelFor = (r: { upcoming: Upcoming }) => {
   const q = rawById.get(r.upcoming.subjectId)?.quant;
   return q ? { mean: q.nextExam.mean, scale: q.nextExam.sd, df: q.df } : null;
 };
+
+/**
+ * The life-signals board (§D5, T19). Same discipline as the chart/scorecard
+ * facts below: the committed fixture carries no signal data at all (no
+ * topics, sessions, rest, disruptions or profile — signalread.ts's own
+ * load-bearing invariant), so every read here collapses to the identity.
+ * That is exactly the state the derivations must degrade honestly against —
+ * null baselines, empty term tables, zeroed adjustments — never a NaN or a
+ * fabricated substitution.
+ */
+const signalBook = emptySignalBook;
+const signalModelMeans = new Map(stats.map((s) => [s.sub.id, s.quant?.nextExam.mean ?? null]));
+const signalReads = signalBoard(subjects, signalBook, entries, upcoming, signalModelMeans, TODAY);
+const signalFit = signalSkill(register, signalBook, subjects, entries, true);
+const voiDesks = new Map(stats.map((s) => [s.sub.id, s.quant?.nextExam.sd ?? null]));
+const voi = valueOfInformation(active, signalBook, voiDesks, TODAY);
+const signalStockOf: Record<string, StockRead> = {};
+const signalMasteryOf: Record<string, MasteryRead> = {};
+const signalModelMeanOf: Record<string, number | null> = {};
+for (const sub of active) {
+  signalStockOf[sub.id] = studyStock(signalBook.sessions, signalBook.rest, sub.mix ?? null, TODAY);
+  const masteries = topicMastery(signalBook.topics, signalBook.topicMarks, signalBook.sessions, entries, sub.traits ?? null, sub.mix ?? null, TODAY);
+  const mm = signalModelMeans.get(sub.id) ?? null;
+  signalMasteryOf[sub.id] = masteryRead(signalBook.topics, masteries, mm, sub.attendancePct ?? null, TODAY);
+  signalModelMeanOf[sub.id] = mm;
+}
+const signalCardFacts: ScorecardFacts = {
+  signalStock: signalStockOf,
+  signalMastery: signalMasteryOf,
+  signalModelMean: signalModelMeanOf,
+};
+const signalCtx: DeriveCtx = {
+  ...ctxFor(stats[0]),
+  signalReads,
+  signalFit,
+  voi,
+  card: signalCardFacts,
+};
+for (const id of ["signal.adjust", "signal.stock", "signal.mastery"]) {
+  const d = derivationFor(id, signalCtx);
+  if (d) built.push({ id, ticker: "SIGNALS", d });
+}
+for (let i = 0; i < Math.min(3, voi.length); i++) {
+  const d = derivationFor("signal.voi", { ...signalCtx, key: String(i) });
+  if (d) built.push({ id: "signal.voi", ticker: "SIGNALS", d });
+}
 
 const roundKeys = [...new Set(entries.filter((e) => e.type === "Exam").map((e) => entryTermKey(e, cal)))].sort();
 const meanCalls: MeanCall[] = roundKeys.map((k, i) => ({
@@ -287,7 +338,7 @@ const texOf = (d: Derivation): string[] => [
 describe("the derivation layer on the real book", () => {
   it("builds a substantial corpus — every desk, most of the catalogue", () => {
     expect(stats.length).toBeGreaterThanOrEqual(6);
-    expect(DERIVATION_IDS.length).toBeGreaterThanOrEqual(35);
+    expect(DERIVATION_IDS.length).toBeGreaterThanOrEqual(39);
     // Every desk on this book is fully priced, marked, rated and ranked.
     for (const s of stats) {
       const mine = built.filter((b) => b.ticker === s.sub.ticker);
@@ -461,6 +512,30 @@ describe("the derivation layer on the real book", () => {
     expect(derivationFor("chart.ma", chartCtx)!.result.value).toBe(ma.value.toFixed(1));
     const comp = chartCtx.chart!.comp!;
     expect(derivationFor("chart.composite", chartCtx)!.result.value).toBe(comp.value.toFixed(1));
+  });
+
+  it("reconciles: the life-signals channel states the figures the SIGNALS board shows", () => {
+    const read = signalReads.get(stats[0].sub.id)!;
+    const wAdj = signalFit.w * read.adj;
+    const fmtPts = (x: number) => (Math.abs(x) < 0.005 ? "0.00" : `${x > 0 ? "+" : ""}${x.toFixed(2)}`);
+    expect(derivationFor("signal.adjust", signalCtx)!.result.value).toBe(fmtPts(wAdj));
+
+    const stock = signalStockOf[stats[0].sub.id];
+    expect(derivationFor("signal.stock", signalCtx)!.result.value).toBe((stock.term >= 0 ? "+" : "") + stock.term.toFixed(2));
+
+    const mastery = signalMasteryOf[stats[0].sub.id];
+    expect(derivationFor("signal.mastery", signalCtx)!.result.value).toBe((mastery.term >= 0 ? "+" : "") + mastery.term.toFixed(2));
+
+    // On this untouched book both channels collapse to the identity.
+    expect(read.adj).toBe(0);
+    expect(read.terms).toEqual([]);
+    expect(stock.baseline).toBeNull();
+    expect(mastery.predictedPaper).toBeNull();
+
+    for (let i = 0; i < Math.min(3, voi.length); i++) {
+      const d = derivationFor("signal.voi", { ...signalCtx, key: String(i) })!;
+      expect(d.result.value).toBe(voi[i].score.toFixed(3));
+    }
   });
 
   it("has no dead builders — every registered id builds somewhere", () => {

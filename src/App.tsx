@@ -406,8 +406,9 @@ export default function App() {
     () => ({
       stats: booked, index, forecast: aggFc, depthModel: depth, signals,
       settings: data?.settings, selfPool: selfFit, selfStakes,
+      signalReads, signalFit, voi,
     }),
-    [booked, index, aggFc, depth, signals, data?.settings, selfFit, selfStakes],
+    [booked, index, aggFc, depth, signals, data?.settings, selfFit, selfStakes, signalReads, signalFit, voi],
   );
 
   /* keyboard: Ctrl+K palette; bare 1–5 tabs, N log-result, D delisted,
@@ -998,6 +999,7 @@ export default function App() {
                 profile={data.settings.profile ?? null}
                 onSaveTraits={saveSubjectTraits}
                 onSaveProfile={saveProfile}
+                deriveCtx={deriveCtx}
               />
             )}
           </div>

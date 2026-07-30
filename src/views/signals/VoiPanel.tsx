@@ -1,4 +1,6 @@
 import { C, FONT, microLabel } from "../../theme";
+import { Derive } from "../../components/ui/Derive";
+import type { DeriveCtx } from "../../lib/derive";
 import type { VoiItem } from "../../lib/quant/signals/voi";
 
 /**
@@ -16,10 +18,16 @@ import type { VoiItem } from "../../lib/quant/signals/voi";
  * is `effortMin`, a plain minute count the item already carries raw (not
  * copy), so there is nothing to re-round or misstate. Order is the ranker's
  * own score-desc order, never re-sorted client-side.
+ *
+ * T19 — each row carries a `<Derive id="signal.voi">` trigger, keyed by its
+ * own array index (`ctx.key`) rather than a subject id: several rows here are
+ * book-wide (rest, profile) and carry no subject at all.
  */
 
 export interface VoiPanelProps {
   items: VoiItem[];
+  /** Absent (no App-level derivation context yet) just means the rows render bare. */
+  deriveCtx?: DeriveCtx;
 }
 
 const rowStyle = { borderColor: C.line } as const;
@@ -27,7 +35,7 @@ const rankStyle = { color: C.faint, fontFamily: FONT.mono } as const;
 const actionStyle = { color: C.text, fontFamily: FONT.mono } as const;
 const effortStyle = { color: C.faint, fontFamily: FONT.mono } as const;
 
-export function VoiPanel({ items }: VoiPanelProps) {
+export function VoiPanel({ items, deriveCtx }: VoiPanelProps) {
   if (items.length === 0) {
     return (
       <p className="text-[11px] uppercase tracking-wider leading-relaxed" style={{ color: C.faint, fontFamily: FONT.mono }}>
@@ -45,7 +53,11 @@ export function VoiPanel({ items }: VoiPanelProps) {
         >
           <span className="w-5 shrink-0 text-right text-[10px] tabular-nums" style={rankStyle}>{i + 1}</span>
           <span className="flex-1 text-[11px] font-bold uppercase tracking-wide leading-snug" style={actionStyle}>
-            {it.action}
+            {deriveCtx ? (
+              <Derive id="signal.voi" ctx={{ ...deriveCtx, key: String(i) }}>{it.action}</Derive>
+            ) : (
+              it.action
+            )}
           </span>
           <span className="w-20 shrink-0 text-right text-[10px] uppercase tabular-nums tracking-wider" style={effortStyle}>
             {it.effortMin} MIN

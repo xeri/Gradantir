@@ -110,6 +110,19 @@ export interface DeriveCtx {
   selfPool?: import("../quant/pool").SelfWeightModel | null;
   selfStakes?: Record<string, import("../../types").SelfPrediction>;
   /**
+   * The life-signals board (§D5, T19) — the whole per-desk read, book-wide,
+   * so a builder picks its own desk out of it via `stat.sub.id`, the same
+   * `signals` (whole advisory board) precedent above. `signalFit` is the
+   * ONE earned weight the channel carries (book-level, not per-desk); `voi`
+   * is the "what to log next" ranker's own top-N output, already sorted —
+   * a builder indexes into it with `key` (the row's own position, a plain
+   * string index) rather than a subject id, since several rows are book-wide
+   * (no subject at all).
+   */
+  signalReads?: Map<string, import("../quant/signals/signalread").SignalRead>;
+  signalFit?: import("../quant/signals/signalskill").SignalSkill;
+  voi?: import("../quant/signals/voi").VoiItem[];
+  /**
    * The scorecard's and the chart board's own traces (see `facts.ts`). These
    * boards assemble their figures from several engines at once and have no
    * `trace.ts` of their own, so the view hands down what it computed rather

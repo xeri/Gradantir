@@ -28,6 +28,7 @@ import {
   skillAblation, skillBias, skillCoverage, skillCrps, skillMae,
 } from "./skill";
 import { markAttribution, markCusum, markDiscount, markPrice, markRegime, PREMIUM_KEYS, premium } from "./mark";
+import { signalAdjust, signalMastery, signalStock, signalVoi } from "./signals";
 import {
   fvDetrend, fvEnsemble, fvEwma, fvInterval, fvKalman, fvP10, fvShrunk, fvTrend, fvValue,
   oracleCarry, oracleNext,
@@ -108,6 +109,12 @@ const BUILDERS: Record<string, DerivationBuilder> = {
   "gap.exam": gapExam,
   "effort.plan": effortPlan,
   "effort.drift": effortDrift,
+
+  // Part VIII — the life-signals board (§D5, T19).
+  "signal.adjust": signalAdjust,
+  "signal.stock": signalStock,
+  "signal.mastery": signalMastery,
+  "signal.voi": signalVoi,
 };
 
 // The premium schedule is one builder parameterized by line key.

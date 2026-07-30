@@ -28,6 +28,8 @@ import type { MeanPoolModel } from "../quant/meanpool";
 import type { SelfWeightModel } from "../quant/pool";
 import type { AiWeightModel } from "../quant/aipool";
 import type { ReadinessSkill } from "../quant/readiness";
+import type { MasteryRead } from "../quant/signals/mastery";
+import type { StockRead } from "../quant/signals/stock";
 import type { AggregateForecast } from "../../types";
 
 /** The effort spider's state, in the token unit the plan is stored in. */
@@ -50,7 +52,9 @@ export interface EffortFacts {
   tickerOf: Record<string, string>;
 }
 
-/** D5 · everything the scorecard measured, as the card measured it. */
+/** D5 · everything the scorecard measured, as the card measured it — and,
+ *  below, everything the SIGNALS board measured (T19): both floors are D5,
+ *  and neither has a `trace.ts` of its own. */
 export interface ScorecardFacts {
   /** Walk-forward one-step-ahead backtest of the whole book. */
   book?: BookBacktest | null;
@@ -77,6 +81,19 @@ export interface ScorecardFacts {
   /** The Elo table behind the readiness ranking, and the pile that fitted it. */
   elo?: { rows: Readiness[]; duels: number; tickerOf: Record<string, string> } | null;
   effort?: EffortFacts | null;
+  /**
+   * The life-signals board's own per-desk reads (T19), keyed by subject id —
+   * exactly the `studyStock`/`topicMastery`+`masteryRead` calls the SIGNALS
+   * view already makes for `MasteryPanel` and the per-term marginal table,
+   * handed down rather than run a second time so `signal.stock`/
+   * `signal.mastery` quote the identical numbers on screen. `signalModelMean`
+   * is the pre-signal house mean `masteryRead` compared its own call against
+   * — not `stat.quant.nextExam.mean`, which by the time a derivation reads it
+   * may already carry this very channel's own shift.
+   */
+  signalStock?: Record<string, StockRead> | null;
+  signalMastery?: Record<string, MasteryRead> | null;
+  signalModelMean?: Record<string, number | null> | null;
 }
 
 /** D2 · what the chart board drew, for the figure under the cursor. */

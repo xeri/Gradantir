@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { C, FONT, microLabel } from "../../theme";
+import { Derive } from "../../components/ui/Derive";
 import { Panel } from "../../components/ui/Panel";
 import { PricedBanner } from "../../components/ui/PricedBanner";
 import { LogPanels } from "./LogPanels";
@@ -7,9 +8,11 @@ import { MasteryPanel, type SubjectMasteryRead } from "./MasteryPanel";
 import { TraitsEditor, type SubjectTraitsPatch } from "./TraitsEditor";
 import { VoiPanel } from "./VoiPanel";
 import { signalRead, type NextSitting, type SignalBook, type SignalRead, type SignalTermKey } from "../../lib/quant/signals/signalread";
-import { topicMastery, masteryRead } from "../../lib/quant/signals/mastery";
+import { topicMastery, masteryRead, type MasteryRead } from "../../lib/quant/signals/mastery";
+import { studyStock, type StockRead } from "../../lib/quant/signals/stock";
 import type { SignalSkill } from "../../lib/quant/signals/signalskill";
 import type { VoiItem } from "../../lib/quant/signals/voi";
+import type { DeriveCtx } from "../../lib/derive";
 import type { DisruptionKind, GradeEntry, Profile, SessionKind, SubjectStat, Upcoming } from "../../types";
 
 /**
@@ -42,6 +45,14 @@ import type { DisruptionKind, GradeEntry, Profile, SessionKind, SubjectStat, Upc
  * the exact memo App.tsx already fitted (Task 12); only the per-term DROPPED
  * variants are computed fresh, right here, because they are the one thing
  * the board never had a reason to carry.
+ *
+ * T19 threads the derivation layer through: ADJ/W·ADJ, the STOCK and MASTERY
+ * columns, and every VOI row carry a `<Derive>` trigger. `stockBySubject`
+ * mirrors `masteryBySubject`'s own precedent exactly — computed once here,
+ * handed down via `lib/derive/facts.ts`'s `ScorecardFacts.signalStock`/
+ * `signalMastery`/`signalModelMean`, so `signal.stock`/`signal.mastery`
+ * quote the identical StockRead/MasteryRead this view already built rather
+ * than calling `studyStock`/`topicMastery`/`masteryRead` a second time.
  */
 
 const TERM_COLS: { key: SignalTermKey; label: string }[] = [
@@ -76,6 +87,10 @@ function soonestNext(subjectId: string, upcoming: Upcoming[], asOf: string): Nex
 }
 
 const IDENTITY_READ = (subjectId: string): SignalRead => ({ subjectId, adj: 0, sdMult: 1, terms: [], reasons: [] });
+/** Mirrors `mastery.ts`'s own (unexported) `MASTERY_IDENTITY` — the fallback
+ *  for a live subject `masteryBySubject` has not (yet) keyed, which should
+ *  never happen since both maps iterate the identical `liveSubs`. */
+const EMPTY_MASTERY: MasteryRead = { topics: [], coverage: null, predictedPaper: null, term: 0, unevenness: 0 };
 
 export interface SignalsProps {
   /** The visible board — ticker, colour and archived status per desk. */
@@ -113,12 +128,15 @@ export interface SignalsProps {
    *  book write per commit, never per drag frame. */
   onSaveTraits: (subjectId: string, patch: SubjectTraitsPatch) => void;
   onSaveProfile: (profile: Profile) => void;
+  /** T19 — the derivation layer's shared context. Absent (a drawer-less test
+   *  harness) just means every figure on this floor renders bare. */
+  deriveCtx?: DeriveCtx;
 }
 
 export function Signals({
   stats, entries, upcoming, signalBook, signalReads, modelMeans, signalFit, signalOn, todayIso, voi,
   onSetSignalWeighting, onOpenSubject, onLogSession, onLogRest, onLogDisruption,
-  onAddTopic, onEditTopic, profile, onSaveTraits, onSaveProfile,
+  onAddTopic, onEditTopic, profile, onSaveTraits, onSaveProfile, deriveCtx,
 }: SignalsProps) {
   /* The live roster to log against — a delisted desk has no line to log a
      study session onto. Rest and disruptions are not subject-scoped at all,
@@ -138,7 +156,7 @@ export function Signals({
           return [key, full.adj - dropped.adj];
         }),
       );
-      return { sub, adj: full.adj, wAdj: signalFit.w * full.adj, marginals };
+      return { sub, stat: s, adj: full.adj, wAdj: signalFit.w * full.adj, marginals };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stats, signalReads, entries, upcoming, modelMeans, signalBook, todayIso, signalFit.w]);
@@ -165,6 +183,40 @@ export function Signals({
     }
     return out;
   }, [liveSubs, signalBook, entries, modelMeans, todayIso]);
+
+  /* STOCK (T19) — the same "computed here once, handed down as a finished
+     read" split as `masteryBySubject` above, so `signal.stock`'s derivation
+     quotes the identical StockRead the STOCK column's marginal was computed
+     from, never a second call into `studyStock`. */
+  const stockBySubject = useMemo(() => {
+    const out: Record<string, StockRead> = {};
+    for (const sub of liveSubs) {
+      const subjSessions = signalBook.sessions.filter((s) => s.subjectId === sub.id);
+      out[sub.id] = studyStock(subjSessions, signalBook.rest, sub.mix ?? null, todayIso);
+    }
+    return out;
+  }, [liveSubs, signalBook, todayIso]);
+
+  /* The derivation context this floor hands every trigger — App's own board
+     facts (Task 12/T19: signalReads/signalFit/voi) plus the SIGNALS board's
+     own facts (T19), threaded via `ScorecardFacts` exactly like the
+     Scorecard's `cardFacts` (both are D5). */
+  const dctx = useMemo<DeriveCtx | undefined>(() => {
+    if (!deriveCtx) return undefined;
+    const masteryOf: Record<string, MasteryRead> = {};
+    const modelMeanOf: Record<string, number | null> = {};
+    for (const sub of liveSubs) {
+      masteryOf[sub.id] = masteryBySubject.get(sub.id)?.read ?? EMPTY_MASTERY;
+      modelMeanOf[sub.id] = modelMeans.get(sub.id) ?? null;
+    }
+    return {
+      ...deriveCtx,
+      signalReads,
+      signalFit,
+      voi,
+      card: { ...deriveCtx.card, signalStock: stockBySubject, signalMastery: masteryOf, signalModelMean: modelMeanOf },
+    };
+  }, [deriveCtx, liveSubs, masteryBySubject, modelMeans, signalReads, signalFit, voi, stockBySubject]);
 
   return (
     <div className="space-y-4">
@@ -229,17 +281,31 @@ export function Signals({
                     </td>
                     {TERM_COLS.map((c) => {
                       const v = r.marginals.get(c.key) ?? 0;
+                      const cell = Math.abs(v) < ZERO_EPS ? "—" : fmtPts(v);
+                      const derivedId = c.key === "stock" ? "signal.stock" : c.key === "mastery" ? "signal.mastery" : null;
                       return (
                         <td key={c.key} className="px-2.5 py-2 text-right text-xs tabular-nums" style={{ fontFamily: FONT.mono, color: toneOf(v) }}>
-                          {Math.abs(v) < ZERO_EPS ? "—" : fmtPts(v)}
+                          {derivedId && dctx ? (
+                            <Derive id={derivedId} ctx={{ ...dctx, stat: r.stat }} passive>{cell}</Derive>
+                          ) : (
+                            cell
+                          )}
                         </td>
                       );
                     })}
                     <td className="px-2.5 py-2 text-right text-xs font-bold tabular-nums" style={{ fontFamily: FONT.mono, color: toneOf(r.adj) }}>
-                      {fmtPts(r.adj)}
+                      {dctx ? (
+                        <Derive id="signal.adjust" ctx={{ ...dctx, stat: r.stat }} passive>{fmtPts(r.adj)}</Derive>
+                      ) : (
+                        fmtPts(r.adj)
+                      )}
                     </td>
                     <td className="px-2.5 py-2 text-right text-xs font-bold tabular-nums" style={{ fontFamily: FONT.mono, color: toneOf(r.wAdj) }}>
-                      {fmtPts(r.wAdj)}
+                      {dctx ? (
+                        <Derive id="signal.adjust" ctx={{ ...dctx, stat: r.stat }} passive>{fmtPts(r.wAdj)}</Derive>
+                      ) : (
+                        fmtPts(r.wAdj)
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -284,7 +350,7 @@ export function Signals({
       </Panel>
 
       <Panel title="WHAT TO LOG NEXT — VOI">
-        <VoiPanel items={voi} />
+        <VoiPanel items={voi} deriveCtx={dctx} />
       </Panel>
     </div>
   );

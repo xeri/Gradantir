@@ -28,9 +28,12 @@ const pctW = (w: number): string => `${Math.round(w * 100)}%`;
 /**
  * The shared credibility step, written once. Every channel substitutes its own
  * κ, cap and shrinkage target into the same two lines, which is the whole point
- * of there being one rule rather than three.
+ * of there being one rule rather than three. Exported so `signals.ts`'s
+ * `signal.adjust` can reuse it verbatim for the life-signals channel (§D5,
+ * T19) — a fourth channel obeying the same rule is a reason to share this
+ * function, not to fork it.
  */
-function creditSteps(
+export function creditSteps(
   fit: { w: number; n: number; youScore: number | null; modelScore: number | null; rawShare: number },
   opts: { kappa: number; cap: number; toward: number; unit: string },
 ) {
