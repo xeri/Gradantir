@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { C, FONT, microLabel } from "../../theme";
-import { Field } from "../../components/ui/Field";
+import { Field, inputCls, inputStyle } from "../../components/ui/Field";
 import { clamp } from "../../lib/utils";
 import type { Chronotype, Profile, Subject, SubjectMix, SubjectTraits } from "../../types";
 
@@ -42,6 +42,20 @@ import type { Chronotype, Profile, Subject, SubjectMix, SubjectTraits } from "..
  * fixed sum of 1 instead of a fixed token total): the committed mix always
  * already sums to 1, so `sanitizeMix`'s renormalisation on the next load is
  * a numerical no-op.
+ *
+ * COMMIT ONLY WHAT WAS ACTUALLY TOUCHED (T17 review finding). `SubjectTraitsPatch`
+ * carries each of traits/mix/belief/attendancePct as OPTIONAL: a `dirtyRef` set
+ * accumulates which groups were dragged since the last commit, and `commit()`
+ * includes only those keys in the patch it hands to `onSaveTraits`. This matters
+ * because the mastery engine (mastery.ts/params.ts) treats "never set" and "set to
+ * a neutral default" as DIFFERENT states — a null `traits` turns prereq gating off
+ * entirely, and a null `mix` decays at `DEFAULT_HALF_LIFE` rather than the blended
+ * half-life an even mix produces — so writing all four groups unconditionally on
+ * every commit (the pre-review behaviour) would silently change a desk's priced
+ * mastery term the moment the student dragged ANY one slider, including three
+ * priors they never touched. A patch that omits an untouched group leaves that
+ * field exactly as it was on the subject; App.tsx's `saveSubjectTraits` merges
+ * only the keys present, never stamping the other three.
  */
 
 const TRAIT_KEYS: { key: keyof SubjectTraits; label: string; hint: string }[] = [
@@ -80,12 +94,27 @@ function rebalanceMix(mix: SubjectMix, key: keyof SubjectMix, next: number): Sub
   return out;
 }
 
+/** What a commit actually hands to `onSaveTraits` — only the group(s) touched
+ *  since the last commit, so an untouched group is never stamped (see the file
+ *  doc comment, "COMMIT ONLY WHAT WAS ACTUALLY TOUCHED"). */
 export interface SubjectTraitsPatch {
+  traits?: SubjectTraits;
+  mix?: SubjectMix;
+  belief?: number;
+  attendancePct?: number;
+}
+
+/** The full local draft — always fully populated (from the subject's own values
+ *  or a neutral default) so every slider always has a number to render. Distinct
+ *  from `SubjectTraitsPatch`: only a SUBSET of this ever reaches `onSaveTraits`. */
+interface TraitsDraft {
   traits: SubjectTraits;
   mix: SubjectMix;
   belief: number;
   attendancePct: number;
 }
+
+type TraitGroup = keyof TraitsDraft;
 
 export interface TraitsEditorProps {
   /** Live desks only — a delisted desk has no line to set a shape prior on. */
@@ -96,7 +125,6 @@ export interface TraitsEditorProps {
   onSaveProfile: (profile: Profile) => void;
 }
 
-const inputStyle = { background: C.panel2, borderColor: C.line, color: C.text, fontFamily: FONT.mono } as const;
 const hintStyle = { color: C.faint, fontFamily: FONT.mono } as const;
 
 /** One range control: draft-only on drag (`input`), commits on release. */
@@ -141,47 +169,93 @@ function Slider({
 
 export function TraitsEditor({ subjects, profile, onSaveTraits, onSaveProfile }: TraitsEditorProps) {
   const [subjectId, setSubjectId] = useState(subjects[0]?.id ?? "");
-  const subject = subjects.find((s) => s.id === subjectId) ?? null;
+  /* SIGNALS mounts this editor with `liveSubs`, which can go from [] to
+     non-empty (or swap desks entirely) WITHOUT a remount — a book whose desks
+     are all delisted, relisted without leaving the floor. `subjectId` state has
+     no re-sync effect, so a stale/empty value must be derived fresh every
+     render rather than trusted once `subjects` moves under it (T17 review
+     finding): before this, `subject` below resolved to null forever, and
+     `commit()`'s `if (subject)` guard silently swallowed every drag. */
+  const sid = subjects.some((s) => s.id === subjectId) ? subjectId : (subjects[0]?.id ?? "");
+  const subject = subjects.find((s) => s.id === sid) ?? null;
 
-  const filedTraits = (s: Subject | null): SubjectTraitsPatch => ({
+  const filedTraits = (s: Subject | null): TraitsDraft => ({
     traits: s?.traits ?? DEFAULT_TRAITS,
     mix: s?.mix ?? DEFAULT_MIX,
     belief: s?.belief ?? DEFAULT_BELIEF,
     attendancePct: s?.attendancePct ?? DEFAULT_ATTENDANCE,
   });
 
-  const [draft, setDraft] = useState<SubjectTraitsPatch>(() => filedTraits(subject));
+  const [draft, setDraft] = useState<TraitsDraft>(() => filedTraits(subject));
   const draftRef = useRef(draft);
+  /* Which draft groups were actually dragged since the last commit — cleared
+     on every commit and on every subject switch. Only these keys ever reach
+     `onSaveTraits` (see the file doc comment, "COMMIT ONLY WHAT WAS ACTUALLY
+     TOUCHED"): committing belief alone must never also stamp DEFAULT_TRAITS/
+     DEFAULT_MIX/DEFAULT_ATTENDANCE onto a desk that never set them. */
+  const dirtyRef = useRef<Set<TraitGroup>>(new Set());
   /* A newly picked subject is a new draft — nothing carries over from the
      one it replaced, the same rule EffortCard holds for `roundKey`. */
   useEffect(() => {
     const next = filedTraits(subject);
     draftRef.current = next;
     setDraft(next);
+    dirtyRef.current = new Set();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [subjectId]);
+  }, [sid]);
 
-  const apply = (patch: SubjectTraitsPatch) => { draftRef.current = patch; setDraft(patch); };
-  const commit = () => { if (subject) onSaveTraits(subject.id, draftRef.current); };
+  /* Builds the next draft from `draftRef.current`, not the `draft` state
+     variable: several drag frames land inside one React batch, so the NEXT
+     drag frame must read the LATEST value `commit()` will also read, not
+     whatever `draft` closed over when this render's handler was bound. */
+  const apply = (patch: TraitsDraft, group: TraitGroup) => {
+    draftRef.current = patch;
+    setDraft(patch);
+    dirtyRef.current.add(group);
+  };
+  const commit = () => {
+    if (!subject || dirtyRef.current.size === 0) return;
+    const d = draftRef.current;
+    const patch: SubjectTraitsPatch = {};
+    if (dirtyRef.current.has("traits")) patch.traits = d.traits;
+    if (dirtyRef.current.has("mix")) patch.mix = d.mix;
+    if (dirtyRef.current.has("belief")) patch.belief = d.belief;
+    if (dirtyRef.current.has("attendancePct")) patch.attendancePct = d.attendancePct;
+    onSaveTraits(subject.id, patch);
+    dirtyRef.current = new Set();
+  };
 
   const setTrait = (key: keyof SubjectTraits, v: number) =>
-    apply({ ...draft, traits: { ...draft.traits, [key]: clamp(v, 0, 1) } });
+    apply({ ...draftRef.current, traits: { ...draftRef.current.traits, [key]: clamp(v, 0, 1) } }, "traits");
   const setMixShare = (key: keyof SubjectMix, v: number) =>
-    apply({ ...draft, mix: rebalanceMix(draft.mix, key, v) });
-  const setBelief = (v: number) => apply({ ...draft, belief: Math.round(clamp(v, 1, 5)) });
-  const setAttendance = (v: number) => apply({ ...draft, attendancePct: Math.round(clamp(v, 0, 100)) });
+    apply({ ...draftRef.current, mix: rebalanceMix(draftRef.current.mix, key, v) }, "mix");
+  const setBelief = (v: number) => apply({ ...draftRef.current, belief: Math.round(clamp(v, 1, 5)) }, "belief");
+  const setAttendance = (v: number) => apply({ ...draftRef.current, attendancePct: Math.round(clamp(v, 0, 100)) }, "attendancePct");
 
   /* The profile draft — independent of the subject picker entirely. */
-  const filedProfile: Profile = { chronotype: profile?.chronotype ?? null, testAnxiety: profile?.testAnxiety ?? DEFAULT_ANXIETY };
-  const [profileDraft, setProfileDraft] = useState<Profile>(filedProfile);
+  const [profileDraft, setProfileDraft] = useState<Profile>(() => ({
+    chronotype: profile?.chronotype ?? null,
+    testAnxiety: profile?.testAnxiety ?? DEFAULT_ANXIETY,
+  }));
   const profileDraftRef = useRef(profileDraft);
+  /* Re-syncs the draft whenever the incoming `profile` prop itself changes
+     (identity, not value — App.tsx only ever hands down a new `settings.profile`
+     object when it actually changed, so this never fires on unrelated re-renders).
+     Without this, an import landing elsewhere (e.g. Settings) while SIGNALS stays
+     mounted was never reflected here, so the next anxiety commit would write the
+     PRE-IMPORT chronotype back over the just-imported one (T17 review minor). */
+  useEffect(() => {
+    const next: Profile = { chronotype: profile?.chronotype ?? null, testAnxiety: profile?.testAnxiety ?? DEFAULT_ANXIETY };
+    profileDraftRef.current = next;
+    setProfileDraft(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile]);
   const applyProfile = (p: Profile) => { profileDraftRef.current = p; setProfileDraft(p); };
   const commitProfile = () => onSaveProfile(profileDraftRef.current);
   /* A discrete choice, not a drag — commits the moment it's picked. */
   const pickChronotype = (c: Chronotype) => {
     const next = { ...profileDraft, chronotype: profileDraft.chronotype === c ? null : c };
     applyProfile(next);
-    profileDraftRef.current = next;
     onSaveProfile(next);
   };
   const setAnxiety = (v: number) => applyProfile({ ...profileDraft, testAnxiety: Math.round(clamp(v, 1, 5)) });
@@ -198,9 +272,9 @@ export function TraitsEditor({ subjects, profile, onSaveTraits, onSaveProfile }:
     <div className="space-y-5">
       <Field label="SUBJECT">
         <select
-          className="gx-focus w-full border px-2.5 py-1.5 text-sm rounded-none appearance-none cursor-pointer font-semibold"
+          className={inputCls + " cursor-pointer font-semibold"}
           style={inputStyle}
-          value={subjectId}
+          value={sid}
           onChange={(e) => setSubjectId(e.target.value)}
         >
           {subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}

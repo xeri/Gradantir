@@ -572,12 +572,27 @@ export default function App() {
      book write per commit (TraitsEditor.tsx's own doc comment), never one per
      drag frame. `saveSubjectTraits` patches one desk's shape priors in the
      SAME `update()` call that also files a profile change would use, so
-     dragging ANY one control on the panel is still exactly one `setData`. */
+     dragging ANY one control on the panel is still exactly one `setData`.
+     `patch` (T17 review fix) carries only the group(s) the student actually
+     dragged since the last commit — traits/mix/belief/attendancePct are each
+     OPTIONAL, and a key that is absent is left exactly as it was on the
+     subject. Writing all four unconditionally would stamp DEFAULT_TRAITS/
+     DEFAULT_MIX/DEFAULT_ATTENDANCE onto three priors the student never
+     touched, and the mastery engine treats "never set" and "set to a neutral
+     default" as different states (mastery.ts's prereq gate, params.ts's
+     halfLifeOf), so that silent stamp would measurably move the desk's
+     priced mastery term. */
   const saveSubjectTraits = (sid: string, patch: SubjectTraitsPatch) =>
     update({
-      subjects: subjects.map((s) => (s.id === sid
-        ? { ...s, traits: patch.traits, mix: patch.mix, belief: patch.belief, attendancePct: patch.attendancePct }
-        : s)),
+      subjects: subjects.map((s) => {
+        if (s.id !== sid) return s;
+        const next = { ...s };
+        if (patch.traits !== undefined) next.traits = patch.traits;
+        if (patch.mix !== undefined) next.mix = patch.mix;
+        if (patch.belief !== undefined) next.belief = patch.belief;
+        if (patch.attendancePct !== undefined) next.attendancePct = patch.attendancePct;
+        return next;
+      }),
     });
   const saveProfile = (profile: Profile) => update({ settings: { ...data.settings, profile } });
   const setTarget = (sid: string, target: number | null) =>

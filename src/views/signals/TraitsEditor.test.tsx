@@ -34,7 +34,9 @@ const subjects: Subject[] = [
 
 let root: Root | null = null;
 let host: HTMLElement;
-let traitSaves: { subjectId: string; traits: SubjectTraits; mix: SubjectMix; belief: number; attendancePct: number }[];
+/** A commit's patch now carries only the groups the student actually touched
+ *  (T17 review finding) — traits/mix/belief/attendancePct are each optional. */
+let traitSaves: { subjectId: string; traits?: SubjectTraits; mix?: SubjectMix; belief?: number; attendancePct?: number }[];
 let profileSaves: Profile[];
 
 afterEach(() => {
@@ -97,7 +99,7 @@ describe("dragging a trait slider", () => {
     release(cSlider);
     expect(traitSaves).toHaveLength(1);
     expect(traitSaves[0].subjectId).toBe("s-math");
-    expect(traitSaves[0].traits.cumulativeness).toBeCloseTo(0.5, 5);
+    expect(traitSaves[0].traits!.cumulativeness).toBeCloseTo(0.5, 5);
     expect(profileSaves).toHaveLength(0);
   });
 
@@ -108,7 +110,7 @@ describe("dragging a trait slider", () => {
     dragTo(bSlider, "0.9");
     release(bSlider);
     expect(traitSaves).toHaveLength(1);
-    expect(traitSaves[0].traits.breadth).toBeCloseTo(0.9, 5);
+    expect(traitSaves[0].traits!.breadth).toBeCloseTo(0.9, 5);
   });
 });
 
@@ -119,7 +121,7 @@ describe("the knowledge/procedure/skill mix", () => {
     dragTo(kSlider, "0.7");
     release(kSlider);
     expect(traitSaves).toHaveLength(1);
-    const { knowledge, procedure, skill } = traitSaves[0].mix;
+    const { knowledge, procedure, skill } = traitSaves[0].mix!;
     expect(knowledge).toBeCloseTo(0.7, 5);
     expect(knowledge + procedure + skill).toBeCloseTo(1, 6);
     // The starting mix was even (1/3 each): the other two should still be
@@ -132,7 +134,7 @@ describe("the knowledge/procedure/skill mix", () => {
     const pSlider = sliderFor("procedure share");
     dragTo(pSlider, "0.6");
     release(pSlider);
-    const { knowledge, procedure, skill } = traitSaves[0].mix;
+    const { knowledge, procedure, skill } = traitSaves[0].mix!;
     expect(procedure).toBeCloseTo(0.6, 5);
     expect(knowledge + procedure + skill).toBeCloseTo(1, 6);
   });
@@ -155,6 +157,25 @@ describe("belief and attendance sliders", () => {
     expect(traitSaves).toHaveLength(2);
     expect(traitSaves[1].attendancePct).toBe(80);
   });
+
+  /* T17 REVIEW FINDING (Important 2): App.tsx wrote traits/mix/belief/attendancePct
+   * unconditionally on every commit, so dragging just one slider stamped default
+   * values (DEFAULT_TRAITS/DEFAULT_MIX/DEFAULT_BELIEF) onto the three the student
+   * never touched — and the mastery engine treats "never set" and "set to the
+   * default" differently (prereq gating switches on, half-life shifts), so this
+   * silently changed that desk's priced mastery term. The commit must carry ONLY
+   * the groups actually dragged since the last commit. */
+  it("commits only the group actually dragged — an untouched desk's traits/mix/attendance are never stamped with defaults", () => {
+    mount(); // subjects[0] = s-math, with no traits/mix/belief/attendancePct on file at all
+    const belief = sliderFor("belief");
+    dragTo(belief, "5");
+    release(belief);
+    expect(traitSaves).toHaveLength(1);
+    expect(traitSaves[0]).toEqual({ subjectId: "s-math", belief: 5 });
+    expect(traitSaves[0].traits).toBeUndefined();
+    expect(traitSaves[0].mix).toBeUndefined();
+    expect(traitSaves[0].attendancePct).toBeUndefined();
+  });
 });
 
 describe("switching the subject picker", () => {
@@ -170,6 +191,15 @@ describe("switching the subject picker", () => {
     expect(belief.value).toBe("4");
     const attendance = sliderFor("attendance");
     expect(attendance.value).toBe("92");
+
+    // Reseeding the DISPLAYED values is not proof by itself that a subsequent
+    // commit actually targets the newly picked desk (and not the one it replaced)
+    // — assert that directly too.
+    dragTo(belief, "5");
+    release(belief);
+    expect(traitSaves).toHaveLength(1);
+    expect(traitSaves[0].subjectId).toBe("s-chem");
+    expect(traitSaves[0].belief).toBe(5);
   });
 });
 
@@ -194,5 +224,88 @@ describe("the profile sliders (person-level, not subject-scoped)", () => {
     expect(profileSaves).toHaveLength(1);
     expect(profileSaves[0]).toMatchObject({ chronotype: "owl", testAnxiety: 3 });
     expect(traitSaves).toHaveLength(0);
+  });
+});
+
+describe("subjectId re-syncing when subjects arrive after mount (T17 review finding)", () => {
+  /** SIGNALS mounts TraitsEditor with `liveSubs` — a book whose desks are ALL
+   *  delisted mounts this component with `subjects: []`. Relisting a desk without
+   *  leaving the SIGNALS floor re-renders the SAME instance with a non-empty
+   *  `subjects` array. Before the fix, `subjectId` stayed "" forever (no effect
+   *  re-synced it), so `subject` resolved to null and `commit()`'s `if (subject)`
+   *  guard silently swallowed every drag — a slider that visibly moved but wrote
+   *  nothing, with no feedback to the student. */
+  it("does not silently drop a commit when subjects goes from empty to non-empty without a remount", () => {
+    traitSaves = [];
+    profileSaves = [];
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    act(() => {
+      root = createRoot(host);
+      root!.render(
+        <TraitsEditor
+          subjects={[]}
+          profile={null}
+          onSaveTraits={(subjectId, patch) => traitSaves.push({ subjectId, ...patch })}
+          onSaveProfile={(p) => profileSaves.push(p)}
+        />,
+      );
+    });
+    expect(host.textContent).toMatch(/list a subject/i);
+
+    // The student relists a desk without leaving the SIGNALS floor: same root, new props.
+    act(() => {
+      root!.render(
+        <TraitsEditor
+          subjects={subjects}
+          profile={null}
+          onSaveTraits={(subjectId, patch) => traitSaves.push({ subjectId, ...patch })}
+          onSaveProfile={(p) => profileSaves.push(p)}
+        />,
+      );
+    });
+
+    // 0.8, not the DEFAULT_TRAITS.cumulativeness (0.5) already displayed — dragging
+    // to the value already on screen leaves the DOM's tracked value unchanged, and
+    // React suppresses the synthetic "input" event entirely when nothing moved.
+    const cSlider = sliderFor("cumulativeness");
+    dragTo(cSlider, "0.8");
+    release(cSlider);
+    expect(traitSaves).toHaveLength(1);
+    expect(traitSaves[0].subjectId).toBe("s-math");
+    expect(traitSaves[0].traits!.cumulativeness).toBeCloseTo(0.8, 5);
+  });
+});
+
+describe("the profile draft re-syncing to its prop (T17 review minor)", () => {
+  /** `filedProfile` was only ever consulted as a `useState` initializer — an
+   *  import from Settings landing while SIGNALS stays mounted was never reflected
+   *  into `profileDraft`, so the next anxiety commit would write the PRE-IMPORT
+   *  chronotype back over the just-imported one. */
+  it("re-seeds the profile draft when the profile prop changes underneath the mounted editor", () => {
+    mount([subjects[0]], { chronotype: "lark", testAnxiety: 2 });
+    const anxietyBefore = sliderFor("test anxiety");
+    expect(anxietyBefore.value).toBe("2");
+
+    // Simulate an import landing elsewhere (e.g. Settings) while SIGNALS stays mounted:
+    // the SAME root re-renders with a new `profile` object.
+    act(() => {
+      root!.render(
+        <TraitsEditor
+          subjects={[subjects[0]]}
+          profile={{ chronotype: "owl", testAnxiety: 5 }}
+          onSaveTraits={(subjectId, patch) => traitSaves.push({ subjectId, ...patch })}
+          onSaveProfile={(p) => profileSaves.push(p)}
+        />,
+      );
+    });
+
+    const anxiety = sliderFor("test anxiety");
+    expect(anxiety.value).toBe("5");
+    dragTo(anxiety, "4");
+    release(anxiety);
+    expect(profileSaves).toHaveLength(1);
+    // The commit must carry the IMPORTED chronotype ("owl"), not the pre-import one.
+    expect(profileSaves[0]).toMatchObject({ chronotype: "owl", testAnxiety: 4 });
   });
 });

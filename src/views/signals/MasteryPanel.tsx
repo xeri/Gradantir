@@ -5,8 +5,6 @@ import { Btn } from "../../components/ui/Btn";
 import type { Subject, Topic } from "../../types";
 import type { MasteryRead, TopicMastery } from "../../lib/quant/signals/mastery";
 
-export type { Subject, Topic } from "../../types";
-
 /**
  * D5 · MASTERY PANEL — a READ-ONLY window onto `mastery.ts`'s own output.
  *
@@ -121,7 +119,15 @@ export function MasteryPanel({ subjects, topics, masteryBySubject, onAddTopic, o
   const [prereqIds, setPrereqIds] = useState<string[]>([]);
   const [err, setErr] = useState("");
 
-  const subjectTopics = topics.filter((t) => t.subjectId === subjectId);
+  /* SIGNALS mounts this panel with `liveSubs`, which can go from [] to non-empty
+     (or swap desks entirely) WITHOUT a remount — a book whose desks are all
+     delisted, relisted from "Show N delisted desks" without leaving the floor.
+     `subjectId` state has no re-sync effect, so a stale/empty value must be
+     derived fresh every render rather than trusted once `subjects` moves under
+     it (T17 review finding). */
+  const sid = subjects.some((s) => s.id === subjectId) ? subjectId : (subjects[0]?.id ?? "");
+
+  const subjectTopics = topics.filter((t) => t.subjectId === sid);
   /* A topic being edited cannot name itself as its own prerequisite. */
   const prereqChoices = subjectTopics.filter((t) => t.id !== editId);
   const togglePrereq = (id: string) => setPrereqIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
@@ -139,6 +145,7 @@ export function MasteryPanel({ subjects, topics, masteryBySubject, onAddTopic, o
 
   const submit = () => {
     if (!name.trim()) { setErr("Give the topic a name."); return; }
+    if (!editId && !sid) { setErr("List a subject before adding a topic."); return; }
     let w: number | null = null;
     if (weight !== "") {
       const n = Number(weight);
@@ -146,7 +153,7 @@ export function MasteryPanel({ subjects, topics, masteryBySubject, onAddTopic, o
       w = n;
     }
     if (editId) onEditTopic(editId, name.trim(), w, prereqIds);
-    else onAddTopic(subjectId, name.trim(), w, prereqIds);
+    else onAddTopic(sid, name.trim(), w, prereqIds);
     resetForm();
   };
 
@@ -180,7 +187,7 @@ export function MasteryPanel({ subjects, topics, masteryBySubject, onAddTopic, o
               <select
                 className={inputCls + " cursor-pointer font-semibold"}
                 style={inputStyle}
-                value={subjectId}
+                value={sid}
                 disabled={editId != null}
                 onChange={(e) => { setSubjectId(e.target.value); setPrereqIds([]); }}
               >

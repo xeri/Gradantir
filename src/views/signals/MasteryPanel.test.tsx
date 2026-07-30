@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MasteryPanel } from "./MasteryPanel";
-import type { Subject, SubjectMasteryRead, Topic } from "./MasteryPanel";
+import type { SubjectMasteryRead } from "./MasteryPanel";
+import type { Subject, Topic } from "../../types";
 
 /**
  * TASK 17 — MasteryPanel is a READ-ONLY window onto the mastery engine's own
@@ -28,13 +29,18 @@ const topics: Topic[] = [
   { id: "t-trig", subjectId: "s-math", name: "Trigonometry", weightPct: 40 },
 ];
 
+const mathMasteries = [
+  { topicId: "t-quad", m: 0.9, mEff: 0.82, lastTouched: "2026-07-20", n: 4 },
+  { topicId: "t-trig", m: 0, mEff: 0, lastTouched: null, n: 0 },
+];
+
 const masteryBySubject = new Map<string, SubjectMasteryRead>([
   ["s-math", {
-    masteries: [
-      { topicId: "t-quad", m: 0.9, mEff: 0.82, lastTouched: "2026-07-20", n: 4 },
-      { topicId: "t-trig", m: 0, mEff: 0, lastTouched: null, n: 0 },
-    ],
-    read: { topics: [], coverage: 0.6, predictedPaper: 72.4, term: 0.8, unevenness: 0.3 },
+    masteries: mathMasteries,
+    // read.topics mirrors masteries exactly, the way the real masteryRead() always
+    // returns them (`topics: masteries`, mastery.ts) — never an empty array beside
+    // non-empty masteries, a state masteryRead() itself can never produce.
+    read: { topics: mathMasteries, coverage: 0.6, predictedPaper: 72.4, term: 0.8, unevenness: 0.3 },
   }],
   ["s-chem", {
     masteries: [],
@@ -97,7 +103,7 @@ describe("the mastery bars", () => {
     expect(host.textContent).toContain("Quadratics");
     expect(host.textContent).toContain("Trigonometry");
     expect(host.textContent).toMatch(/60%/); // coverage
-    expect(host.textContent).toContain("4"); // n marks on Quadratics
+    expect(host.textContent).toMatch(/4 MARKS/); // n marks on Quadratics — not any stray digit
     expect(host.textContent).toMatch(/no marks/i); // Trigonometry, n=0
   });
 
@@ -161,5 +167,53 @@ describe("editing an existing topic", () => {
     click(button(/cancel/i));
     expect(button(/add topic/i)).toBeTruthy();
     expect(button(/save changes/i)).toBeUndefined();
+  });
+});
+
+describe("subjectId re-syncing when subjects arrive after mount (T17 review finding)", () => {
+  /** SIGNALS mounts MasteryPanel with `liveSubs` — `visible.filter(!archived)` — so a
+   *  book whose desks are ALL delisted mounts this component with `subjects: []`.
+   *  Relisting a desk from "Show N delisted desks" re-renders the SAME instance with
+   *  a non-empty `subjects` array; nothing unmounts. `subjectId` must track that
+   *  arrival, or the add-topic form silently files a topic with subjectId "" — a
+   *  topic that matches no desk, is invisible to every SubjectBlock and the engine,
+   *  yet is serialised into the book forever. */
+  it("does not file an orphan topic (subjectId '') when subjects goes from empty to non-empty without a remount", () => {
+    added = [];
+    edited = [];
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    act(() => {
+      root = createRoot(host);
+      root!.render(
+        <MasteryPanel
+          subjects={[]}
+          topics={[]}
+          masteryBySubject={new Map()}
+          onAddTopic={(subjectId, name, weightPct, prereqIds) => added.push({ subjectId, name, weightPct, prereqIds })}
+          onEditTopic={(topicId, name, weightPct, prereqIds) => edited.push({ topicId, name, weightPct, prereqIds })}
+        />,
+      );
+    });
+    expect(host.textContent).toMatch(/list a subject/i);
+
+    // The student relists a desk without leaving the SIGNALS floor: same root, new props.
+    act(() => {
+      root!.render(
+        <MasteryPanel
+          subjects={subjects}
+          topics={topics}
+          masteryBySubject={masteryBySubject}
+          onAddTopic={(subjectId, name, weightPct, prereqIds) => added.push({ subjectId, name, weightPct, prereqIds })}
+          onEditTopic={(topicId, name, weightPct, prereqIds) => edited.push({ topicId, name, weightPct, prereqIds })}
+        />,
+      );
+    });
+
+    setValue(fieldIn("topic name"), "Vectors");
+    click(button(/add topic/i));
+    expect(added).toHaveLength(1);
+    expect(added[0].subjectId).not.toBe("");
+    expect(added[0].subjectId).toBe("s-math");
   });
 });
