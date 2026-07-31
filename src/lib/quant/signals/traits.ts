@@ -1,5 +1,13 @@
 import type { SubjectTraits, TopicMark } from "../../../types";
-import { TRAIT_MARKER_W, TRAIT_SAMPLING_W, TRAIT_SDMULT_CAP } from "./params";
+import {
+  TRAIT_BELIEF_MAX,
+  TRAIT_BELIEF_W,
+  TRAIT_MARKER_W,
+  TRAIT_SAMPLING_W,
+  TRAIT_SDMULT_CAP,
+  TRAIT_TIME_MIN_SHARE,
+  TRAIT_TIME_W,
+} from "./params";
 
 /**
  * The traits read: a variance-only humility claim on the outcome sd
@@ -30,8 +38,8 @@ export function traitSdMult(
 ): number {
   const markerTerm = traits ? TRAIT_MARKER_W * (1 - traits.determinism) : 0;
   const samplingTerm = traits ? TRAIT_SAMPLING_W * (1 - traits.breadth) * (1 + unevenness) : 0;
-  const timeTerm = timeErrorShare >= 0.25 ? 0.05 : 0;
-  const beliefTerm = belief != null && belief <= 2 ? 0.05 : 0;
+  const timeTerm = timeErrorShare >= TRAIT_TIME_MIN_SHARE ? TRAIT_TIME_W : 0;
+  const beliefTerm = belief != null && belief <= TRAIT_BELIEF_MAX ? TRAIT_BELIEF_W : 0;
   const raw = 1 + markerTerm + samplingTerm + timeTerm + beliefTerm;
   return round2(clamp(raw, 1, TRAIT_SDMULT_CAP));
 }

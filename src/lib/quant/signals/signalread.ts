@@ -12,7 +12,21 @@ import type {
 import { median } from "../robust";
 import { disruptionTerm } from "./disrupt";
 import { masteryRead, topicMastery } from "./mastery";
-import { ANX_W, CHRONO_W, SIGNAL_ADJ_CAP } from "./params";
+import {
+  ANX_MID,
+  ANX_SPAN,
+  ANX_W,
+  ATTEND_FULL_PCT,
+  ATTEND_NOTOPIC_CAP,
+  ATTEND_NOTOPIC_SPAN_PCT,
+  ATTEND_NOTOPIC_W,
+  CHRONO_EARLY_HOUR,
+  CHRONO_LARK_FRAC,
+  CHRONO_LATE_HOUR,
+  CHRONO_W,
+  SIGNAL_ADJ_CAP,
+  SIGNAL_NOTE_FLOOR,
+} from "./params";
 import { restRead } from "./rest";
 import { studyStock } from "./stock";
 import { timeErrorShareOf, traitSdMult } from "./traits";
@@ -118,9 +132,6 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
 /** "+x.x" for non-negative, "-x.x" for negative — toFixed already carries the sign for negatives. */
 const signed1 = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}`;
 
-/** A term below this magnitude is noise, not a reason — never shown, never counted toward `terms`/`reasons`. */
-const NOTE_FLOOR = 0.05;
-
 type Candidate = { pts: number; note: () => string };
 
 export function signalRead(
@@ -194,7 +205,7 @@ export function signalRead(
     );
     const pts =
       next?.weight != null && typicalWeight != null && typicalWeight > 0
-        ? -ANX_W * Math.max(0, (anx - 3) / 2) * clamp(next.weight / typicalWeight - 1, 0, 1)
+        ? -ANX_W * Math.max(0, (anx - ANX_MID) / ANX_SPAN) * clamp(next.weight / typicalWeight - 1, 0, 1)
         : 0;
     raw.anxiety = { pts, note: () => `ANXIETY ${signed1(pts)} · HEAVY PAPER` };
   }
@@ -205,11 +216,11 @@ export function signalRead(
     const hour = next.hour;
     let pts = 0;
     let label = "";
-    if (chronotype === "owl" && hour <= 9) {
+    if (chronotype === "owl" && hour <= CHRONO_EARLY_HOUR) {
       pts = -CHRONO_W;
       label = "EARLY";
-    } else if (chronotype === "lark" && hour >= 15) {
-      pts = -CHRONO_W / 2;
+    } else if (chronotype === "lark" && hour >= CHRONO_LATE_HOUR) {
+      pts = -CHRONO_W * CHRONO_LARK_FRAC;
       label = "LATE";
     }
     if (pts !== 0) {
@@ -219,9 +230,17 @@ export function signalRead(
 
   // ATTENDANCE — only when there are no topics to let masteryRead's own
   // attendance shave handle it instead (see mastery.ts's coveredMassShaved).
-  if (!dropped("attendance") && subjTopics.length === 0 && sub.attendancePct != null && sub.attendancePct < 95) {
+  if (
+    !dropped("attendance") &&
+    subjTopics.length === 0 &&
+    sub.attendancePct != null &&
+    sub.attendancePct < ATTEND_FULL_PCT
+  ) {
     const pct = sub.attendancePct;
-    const pts = -Math.min(1, ((95 - pct) / 10) * 0.5);
+    const pts = -Math.min(
+      ATTEND_NOTOPIC_CAP,
+      ((ATTEND_FULL_PCT - pct) / ATTEND_NOTOPIC_SPAN_PCT) * ATTEND_NOTOPIC_W,
+    );
     raw.attendance = { pts, note: () => `ATTENDANCE ${signed1(pts)} · ${pct}% ATTENDED` };
   }
 
@@ -230,7 +249,7 @@ export function signalRead(
   const adj = round2(clamp(sum, -SIGNAL_ADJ_CAP, SIGNAL_ADJ_CAP));
 
   const terms: SignalTerm[] = keys
-    .filter((k) => Math.abs(raw[k]!.pts) >= NOTE_FLOOR)
+    .filter((k) => Math.abs(raw[k]!.pts) >= SIGNAL_NOTE_FLOOR)
     .map((k) => ({ key: k, pts: raw[k]!.pts, note: raw[k]!.note() }))
     .sort((a, b) => {
       // Harshest first: most-negative first, then positives by |pts| desc.

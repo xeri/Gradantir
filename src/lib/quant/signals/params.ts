@@ -95,6 +95,39 @@ export const MASTERY_SCALE = 8;
 /** Marked topics needed before the mastery term is allowed to price at all — below this the estimate is too thin to trust. */
 export const MASTERY_MIN_MARKS = 3;
 
+/**
+ * Weighted share of syllabus that must actually be covered by marks before the
+ * mastery term prices at all. Under a third of the paper measured, the
+ * whole-paper prediction is mostly the model's own call handed back to it, and
+ * pricing the residue would be pricing noise.
+ */
+export const MASTERY_MIN_COVERAGE = 0.3;
+
+/**
+ * Marks at which the mastery term earns its full weight; below it the term is
+ * scaled by totalMarks/this. Six marked topics is the point at which the EWMA
+ * has seen enough of the syllabus that one unlucky paper no longer sets the
+ * read.
+ */
+export const MASTERY_FULL_CREDIT_MARKS = 6;
+
+/**
+ * Attendance at or above this percentage is treated as full attendance and
+ * charged nothing. 95 rather than 100 because ordinary illness and timetable
+ * collisions cost a few percent on any real book, and a channel that charges
+ * everyone is measuring the calendar, not the student. (Class attendance is
+ * the strongest single behavioural correlate of grades in the meta-analytic
+ * literature, which is why the channel exists at all.)
+ */
+export const ATTEND_FULL_PCT = 95;
+
+/**
+ * Share of the attendance shortfall treated as genuinely missed syllabus. Half
+ * rather than all: a missed class is usually recoverable from notes or a peer,
+ * so absence degrades coverage rather than deleting it.
+ */
+export const ATTEND_SHAVE_W = 0.5;
+
 /** Points charged per lost hour of recent-vs-baseline sleep (chronic short-sleep), capped at REST_CHRONIC_CAP. */
 export const REST_CHRONIC_W = 0.75;
 export const REST_CHRONIC_CAP = 1.5;
@@ -106,6 +139,29 @@ export const REST_ACUTE_CAP = 2;
 /** Nights of sleep data needed before the rest channel is allowed to price. */
 export const REST_MIN_NIGHTS = 7;
 
+/**
+ * Ceiling, in hours, on the recent-vs-baseline sleep loss the chronic term
+ * will price. A 2h drop against your own 42-night baseline is already an
+ * extreme reading; past that the self-report is more likely a change in how
+ * the student logs than a change in how they sleep, so the charge saturates
+ * rather than scaling on.
+ */
+export const REST_CHRONIC_MAX_LOSS_H = 2;
+
+/**
+ * Bedtime-irregularity free band, in minutes of sd. Under an hour of
+ * night-to-night variation is ordinary life, not a disrupted rhythm, and is
+ * charged nothing.
+ */
+export const REST_REG_FREE_SD_MIN = 60;
+
+/**
+ * Minutes of sd beyond the free band at which the irregularity charge reaches
+ * its full REST_REG_W. Equal to the free band, so the ramp is
+ * (regSd − 60)/60 clamped to [0,1] and 2h of sd is the saturating case.
+ */
+export const REST_REG_SPAN_MIN = 60;
+
 /** Severity multiplier by disruption kind — illness and family loss hit study capacity hardest; a one-off event or an unclassified "other" disrupt less. */
 export const DISRUPT_SEV: Record<DisruptionKind, number> = {
   illness: 1.5,
@@ -113,6 +169,12 @@ export const DISRUPT_SEV: Record<DisruptionKind, number> = {
   event: 0.75,
   other: 1.0,
 };
+/** Duration credit floor: even a single-day disruption carries this share of its kind's severity. */
+export const DISRUPT_DUR_BASE = 0.5;
+/** Duration credit earned linearly from one day up to DISRUPT_DUR_FULL_DAYS. */
+export const DISRUPT_DUR_SPAN = 0.5;
+/** Days of duration at which the credit saturates — a month-long disruption is not four times a week-long one. */
+export const DISRUPT_DUR_FULL_DAYS = 7;
 /** Exponential recovery time constant, in days, for a disruption's charge to decay back to zero. */
 export const DISRUPT_TAU = 10;
 /** Points cap on the disruption charge. */
@@ -120,8 +182,37 @@ export const DISRUPT_CAP = 2.5;
 
 /** Points weight on the high-arousal Yerkes-Dodson arm only — anxiety helping on an easy paper and hurting on an unusually heavy one is asymmetric, so only the "heavy paper, high arousal" side is priced. */
 export const ANX_W = 1.5;
+/** Midpoint of the 1-5 test-anxiety self-rating: at or below it the term is silent. */
+export const ANX_MID = 3;
+/** Rating points above ANX_MID at which the anxiety scaler reaches 1.0 (i.e. a stated 5). */
+export const ANX_SPAN = 2;
+
 /** Points weight on chronotype/sitting-time synchrony. Measured effects run ~0.05-0.1 sd, under a point, so this stays small. */
 export const CHRONO_W = 0.75;
+
+/**
+ * Sitting hour at or before which an owl is charged the full CHRONO_W.
+ * REPLACED BY M6 (a continuous misalignment function) in the commit after
+ * this one — lifted here only so that, at THIS commit, README §30's "never
+ * hand-typed" claim is true of the code as it actually stands.
+ */
+export const CHRONO_EARLY_HOUR = 9;
+/** Sitting hour at or after which a lark is charged. Replaced by M6. */
+export const CHRONO_LATE_HOUR = 15;
+/** Fraction of CHRONO_W a lark's late sitting is charged. Replaced by M6. */
+export const CHRONO_LARK_FRAC = 0.5;
+
+/**
+ * The no-topic-breakdown attendance path's own scale. REPLACED BY M4 in the
+ * commit that unifies attendance — and these three names are exactly what
+ * makes that defect legible: written out as knobs it is plain that this path
+ * charges (95−pct)/10 · 0.5 in POINTS while mastery.ts shaves (95−pct)/100 ·
+ * 0.5 of MASS. The same student, charged two ways roughly twentyfold apart,
+ * selected by nothing more than whether a topic list happens to exist.
+ */
+export const ATTEND_NOTOPIC_SPAN_PCT = 10;
+export const ATTEND_NOTOPIC_W = 0.5;
+export const ATTEND_NOTOPIC_CAP = 1;
 
 /** Added to the outcome sd multiplier for a low-determinism subject — loose marker judgement (vs formula marking) adds roughly 15-25% to score sd. */
 export const TRAIT_MARKER_W = 0.20;
@@ -130,8 +221,25 @@ export const TRAIT_SAMPLING_W = 0.15;
 /** Ceiling on the combined trait sd multiplier — traits widen a forecast, they never explode it. */
 export const TRAIT_SDMULT_CAP = 1.4;
 
+/** Share of a subject's marks carrying a "time" error kind before the time-pressure nudge fires. */
+export const TRAIT_TIME_MIN_SHARE = 0.25;
+/** Flat sd-multiplier nudge for a time-pressured desk. Small: one self-classified error kind is a hint, not a measurement. */
+export const TRAIT_TIME_W = 0.05;
+/** Stated belief (1-5) at or below which the low-confidence nudge fires. */
+export const TRAIT_BELIEF_MAX = 2;
+/** Flat sd-multiplier nudge for a stated low belief. Same size as TRAIT_TIME_W and for the same reason. */
+export const TRAIT_BELIEF_W = 0.05;
+
 /** Points cap on the WHOLE signal-adjustment layer before the channel-credibility gate (../params.ts) scales it down — set near EFFORT_ACTUAL_W, the layer's closest sibling. After the gate the realized max is roughly ±1.4. */
 export const SIGNAL_ADJ_CAP = 4;
+
+/**
+ * Display/notes floor, in points: a contribution under this magnitude is
+ * noise, not a reason — never shown, never counted toward `terms`/`reasons`.
+ * One owner, because signalread.ts and disrupt.ts each used to carry their own
+ * private copy of the same 0.05.
+ */
+export const SIGNAL_NOTE_FLOOR = 0.05;
 
 /**
  * VOI — the value-of-information ranker (voi.ts). Every constant below is a

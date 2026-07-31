@@ -1,6 +1,17 @@
 import type { RestLog } from "../../../types";
 import { pDate, round1 } from "../../utils";
-import { REST_ACUTE_CAP, REST_ACUTE_W, REST_CHRONIC_CAP, REST_CHRONIC_W, REST_MIN_NIGHTS, REST_REG_W } from "./params";
+import {
+  REST_ACUTE_CAP,
+  REST_ACUTE_W,
+  REST_CHRONIC_CAP,
+  REST_CHRONIC_MAX_LOSS_H,
+  REST_CHRONIC_W,
+  REST_MIN_NIGHTS,
+  REST_REG_FREE_SD_MIN,
+  REST_REG_SPAN_MIN,
+  REST_REG_W,
+  SHORT_SLEEP_H,
+} from "./params";
 
 /**
  * The rest read (D5's "sleep" channel): a self-report, not a measurement, so
@@ -27,6 +38,14 @@ import { REST_ACUTE_CAP, REST_ACUTE_W, REST_CHRONIC_CAP, REST_CHRONIC_W, REST_MI
  *    comment, `date` is the night a reading is FOR — the night ending the
  *    morning of `date + 1`. So "the night before an exam sat on examDate" is
  *    logged under `examDate - 1 day`, not under examDate itself.
+ *
+ * 3. ONE definition of a short night (E1, audit Part I §4). The acute term
+ *    used to gate on a hardcoded 6.5h while stock.ts's encoding penalty gated
+ *    on SHORT_SLEEP_H = 6.0, so the layer meant two different things by "a
+ *    short night" and only one of them was visible in params.ts. Both now read
+ *    SHORT_SLEEP_H. The acute charge is consequently smaller, and fires less
+ *    often, than it did before that commit — a deliberate reconciliation, not
+ *    a retune.
  *
  * Pure and clock-free — `asOf` is always passed in, never read off a live
  * clock.
@@ -121,22 +140,27 @@ export function restRead(rest: RestLog[], examDate: string | null, asOf: string)
 
   const chronicTerm =
     mean14 != null && mean56 != null
-      ? negRound2(Math.min(REST_CHRONIC_W * clamp(mean56 - mean14, 0, 2), REST_CHRONIC_CAP))
+      ? negRound2(
+          Math.min(REST_CHRONIC_W * clamp(mean56 - mean14, 0, REST_CHRONIC_MAX_LOSS_H), REST_CHRONIC_CAP),
+        )
       : 0;
 
   const bedtimeMinutes = inWindow
     .filter((r) => r.bedtime != null)
     .map((r) => unwrapBedtimeMinutes(r.bedtime as string));
   const regSd = bedtimeMinutes.length >= REST_MIN_NIGHTS ? populationStdev(bedtimeMinutes) : null;
-  const regTerm = regSd == null ? 0 : negRound2(REST_REG_W * clamp((regSd - 60) / 60, 0, 1));
+  const regTerm =
+    regSd == null
+      ? 0
+      : negRound2(REST_REG_W * clamp((regSd - REST_REG_FREE_SD_MIN) / REST_REG_SPAN_MIN, 0, 1));
 
   let acuteTerm = 0;
   if (examDate != null) {
     // Night-before-exam row (see module doc comment, convention 2): the row
     // dated exactly one day before examDate.
     const nightBefore = live.find((r) => daysBetween(r.date, examDate) === 1);
-    if (nightBefore && nightBefore.hours < 6.5) {
-      acuteTerm = negRound2(Math.min(REST_ACUTE_W * (6.5 - nightBefore.hours), REST_ACUTE_CAP));
+    if (nightBefore && nightBefore.hours < SHORT_SLEEP_H) {
+      acuteTerm = negRound2(Math.min(REST_ACUTE_W * (SHORT_SLEEP_H - nightBefore.hours), REST_ACUTE_CAP));
     }
   }
 

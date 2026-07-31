@@ -1,10 +1,18 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
-  ANX_W, CARELESS_CREDIT, CHRONO_W, DEFAULT_HALF_LIFE, DISRUPT_CAP, DISRUPT_SEV, DISRUPT_TAU,
-  ENCODING_PENALTY, HALF_LIFE, MASTERY_ALPHA, MASTERY_FLOOR_FRAC, MASTERY_MIN_MARKS, MASTERY_SCALE,
-  MASTERY_W, PREREQ_HEADROOM, QUALITY, REST_ACUTE_CAP, REST_ACUTE_W, REST_CHRONIC_CAP, REST_CHRONIC_W,
-  REST_MIN_NIGHTS, REST_REG_W, SHORT_SLEEP_H, SIGNAL_ADJ_CAP, SPACING_RECENT, SPACING_SAME_DAY,
-  SPACING_STALE, STOCK_FLOOR, STOCK_W, TRAIT_MARKER_W, TRAIT_SAMPLING_W, TRAIT_SDMULT_CAP,
+  ANX_MID, ANX_SPAN, ANX_W, ATTEND_FULL_PCT, ATTEND_SHAVE_W, CARELESS_CREDIT, CHRONO_W,
+  DEFAULT_HALF_LIFE, DISRUPT_CAP, DISRUPT_DUR_BASE, DISRUPT_DUR_FULL_DAYS, DISRUPT_DUR_SPAN,
+  DISRUPT_SEV, DISRUPT_TAU,
+  ENCODING_PENALTY, HALF_LIFE, MASTERY_ALPHA, MASTERY_FLOOR_FRAC, MASTERY_FULL_CREDIT_MARKS,
+  MASTERY_MIN_COVERAGE, MASTERY_MIN_MARKS, MASTERY_SCALE,
+  MASTERY_W, PREREQ_HEADROOM, QUALITY, REST_ACUTE_CAP, REST_ACUTE_W, REST_CHRONIC_CAP,
+  REST_CHRONIC_MAX_LOSS_H, REST_CHRONIC_W,
+  REST_MIN_NIGHTS, REST_REG_FREE_SD_MIN, REST_REG_SPAN_MIN, REST_REG_W, SHORT_SLEEP_H,
+  SIGNAL_ADJ_CAP, SIGNAL_NOTE_FLOOR, SPACING_RECENT, SPACING_SAME_DAY,
+  SPACING_STALE, STOCK_FLOOR, STOCK_W, TRAIT_BELIEF_MAX, TRAIT_BELIEF_W, TRAIT_MARKER_W,
+  TRAIT_SAMPLING_W, TRAIT_SDMULT_CAP, TRAIT_TIME_MIN_SHARE, TRAIT_TIME_W,
   halfLifeOf,
 } from "./params";
 import { SELF_POOL_CAP, SIGNAL_CAP, SIGNAL_PRIOR, READINESS_PRIOR } from "../params";
@@ -111,6 +119,75 @@ describe("remaining formula constants are wired and sane", () => {
     expect(CHRONO_W).toBeGreaterThan(0);
     expect(TRAIT_MARKER_W).toBeGreaterThan(0);
     expect(TRAIT_SAMPLING_W).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * E1 (audit Part I §4). README §30 claims every constant in this layer is
+ * quoted from params.ts and never hand-typed. That claim was false in five
+ * modules, and the loudest instance was a SECOND, invisible definition of a
+ * short night: rest.ts's acute term gated on a hardcoded 6.5h while
+ * SHORT_SLEEP_H = 6.0 governed stock.ts's encoding penalty, so the layer meant
+ * two different things by "a short night" and only one of them was visible.
+ * A doctrine with no test drifts, so the doctrine and its test land together.
+ */
+
+const sourceOf = (name: string): string =>
+  readFileSync(fileURLToPath(new URL(`./${name}`, import.meta.url)), "utf8");
+
+/** Strips block and whole-line comments so a literal quoted in prose is not a hit. */
+const codeOf = (name: string): string =>
+  sourceOf(name).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+describe("E1 — one definition of a short night", () => {
+  it("has exactly one short-sleep threshold, and it is SHORT_SLEEP_H", () => {
+    expect(SHORT_SLEEP_H).toBe(6.0);
+    // The old rival threshold. If 6.5 reappears anywhere in the priced path the
+    // layer once again means two different things by "a short night", and only
+    // one of them is visible to the student in params.ts.
+    for (const mod of ["rest.ts", "stock.ts", "signalread.ts"]) {
+      expect(codeOf(mod), `${mod} still hard-codes a rival short-sleep hour`).not.toMatch(/\b6\.5\b/);
+    }
+  });
+
+  it("prices no bare magic number in a module body", () => {
+    // Every knob below used to be typed inline. Each is now a named export, so
+    // its literal must no longer appear in the module that spends it.
+    const banned: Record<string, RegExp[]> = {
+      "rest.ts": [/regSd\s*-\s*60/, /0,\s*2\)/],
+      "mastery.ts": [/\b0\.3\b/, /\/\s*6\b/, /\b95\b/, /\b0\.5\b/],
+      "signalread.ts": [/-\s*3\)\s*\/\s*2/, /<=\s*9\b/, />=\s*15\b/, /\b95\b/, /\/\s*10\b/],
+      "disrupt.ts": [/0\.5\s*\+\s*0\.5/, /\b7\b/],
+      "traits.ts": [/\b0\.25\b/, /\b0\.05\b/],
+    };
+    for (const [mod, patterns] of Object.entries(banned)) {
+      const code = codeOf(mod);
+      for (const p of patterns) {
+        expect(code, `${mod} still hand-types ${p}`).not.toMatch(p);
+      }
+    }
+  });
+});
+
+describe("E1 — the lifted constants", () => {
+  it("exports every one of them, wired and in range", () => {
+    expect(REST_CHRONIC_MAX_LOSS_H).toBe(2);
+    expect(REST_REG_FREE_SD_MIN).toBe(60);
+    expect(REST_REG_SPAN_MIN).toBe(60);
+    expect(MASTERY_MIN_COVERAGE).toBeGreaterThan(0);
+    expect(MASTERY_MIN_COVERAGE).toBeLessThan(1);
+    expect(MASTERY_FULL_CREDIT_MARKS).toBe(6);
+    expect(ATTEND_FULL_PCT).toBe(95);
+    expect(ATTEND_SHAVE_W).toBe(0.5);
+    expect(ANX_MID).toBe(3);
+    expect(ANX_SPAN).toBe(2);
+    expect(DISRUPT_DUR_BASE + DISRUPT_DUR_SPAN).toBe(1);
+    expect(DISRUPT_DUR_FULL_DAYS).toBe(7);
+    expect(TRAIT_TIME_MIN_SHARE).toBe(0.25);
+    expect(TRAIT_TIME_W).toBe(0.05);
+    expect(TRAIT_BELIEF_MAX).toBe(2);
+    expect(TRAIT_BELIEF_W).toBe(0.05);
+    expect(SIGNAL_NOTE_FLOOR).toBe(0.05);
   });
 });
 

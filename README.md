@@ -1427,7 +1427,11 @@ channel already on, exactly as it would have read had the feature always been th
 ### The formulas
 
 Every constant below is quoted from `src/lib/quant/signals/params.ts` (package-local, the pool.ts
-Z90/SELF_DF precedent) or `src/lib/quant/params.ts`'s life-signals block, never hand-typed.
+Z90/SELF_DF precedent) or `src/lib/quant/params.ts`'s life-signals block, never hand-typed. That
+claim was false for a whole release — `rest.ts`, `mastery.ts`, `signalread.ts`, `disrupt.ts` and
+`traits.ts` each typed knobs inline, and the layer carried a **second, invisible** short-sleep
+threshold — so it is now asserted by `params.test.ts`, which reads the module sources back and
+fails if a lifted literal reappears in the body that spends it.
 
 **Stock** (`stock.ts`) — a decayed 14-day effective-study read against the desk's own decayed 42-day
 baseline, both projected through the subject's own knowledge/procedure/skill half-life $H$
@@ -1460,12 +1464,16 @@ $$
 \text{reg} = -\text{REST\_REG\_W}\cdot\text{clamp}\!\left(\frac{\text{regSd}-60}{60},\,0,\,1\right), \qquad \text{REST\_REG\_W} = 0.5
 $$
 $$
-\text{acute} = -\min\!\big(\text{REST\_ACUTE\_W}\cdot(6.5-h_{\text{night before}}),\ \text{REST\_ACUTE\_CAP}\big), \qquad 0.8,\ 2.0
+\text{acute} = -\min\!\big(\text{REST\_ACUTE\_W}\cdot(\text{SHORT\_SLEEP\_H}-h_{\text{night before}}),\ \text{REST\_ACUTE\_CAP}\big), \qquad 0.8,\ 2.0
 $$
 
-— chronic on a widening 56-vs-14-day sleep gap, reg on bedtime irregularity beyond ±1h sd, acute on a
-sub-6.5h night immediately before the sitting. An absolute sleep level is never priced, only these
-three deviations — see the caveat below on why.
+— chronic on a widening 56-vs-14-day sleep gap, reg on bedtime irregularity beyond
+`REST_REG_FREE_SD_MIN` = 60 min of sd, acute on a night under `SHORT_SLEEP_H` = 6.0h immediately
+before the sitting. That is the *same* threshold `stock.ts`'s encoding penalty uses: the layer has
+exactly one definition of a short night. It used to have two — the acute term gated on a hardcoded
+6.5h — so a 6.2h night was short for one term and full for the other, and only one of the two
+thresholds was visible in `params.ts`. An absolute sleep level is never priced, only these three
+deviations — see the caveat below on why.
 
 **Disruption** (`disrupt.ts`) — a decaying shock, not a flat deduction, only priced against a live
 sitting to recover against:
@@ -1486,8 +1494,11 @@ an owl sitting at/before 9am charges `CHRONO_W` = 0.75 in full, a lark sitting a
 half that — measured effects here run well under a point, so the weight stays small.
 
 **Attendance** (`signalread.ts`) — only when a subject has no topic breakdown to let `mastery.ts`'s
-own attendance shave handle it instead: below 95% attended, $\text{pts} = -\min(1,
-\tfrac{(95-\text{pct})}{10}\cdot 0.5)$.
+own attendance shave handle it instead: below `ATTEND_FULL_PCT` = 95 attended,
+$\text{pts} = -\min\big(\text{ATTEND\_NOTOPIC\_CAP},\
+\tfrac{(95-\text{pct})}{\text{ATTEND\_NOTOPIC\_SPAN\_PCT}}\cdot\text{ATTEND\_NOTOPIC\_W}\big)$.
+Note that this is a **different scale** from the topic path's mass shave — the same student is
+charged two ways, roughly twentyfold apart, selected by whether a topic list happens to exist.
 
 **Traits** (`traits.ts`) — the one variance-only term, never a level effect:
 

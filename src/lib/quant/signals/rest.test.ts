@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { RestLog } from "../../../types";
 import { addDays } from "../../utils";
-import { REST_ACUTE_CAP, REST_ACUTE_W, REST_CHRONIC_CAP, REST_CHRONIC_W, REST_MIN_NIGHTS, REST_REG_W } from "./params";
+import {
+  REST_ACUTE_CAP, REST_ACUTE_W, REST_CHRONIC_CAP, REST_CHRONIC_W, REST_MIN_NIGHTS, REST_REG_W,
+  SHORT_SLEEP_H,
+} from "./params";
 import { restRead } from "./rest";
 
 /**
@@ -160,18 +163,27 @@ describe("restRead — bedtime regularity, with the midnight unwrap", () => {
 describe("restRead — acute term uses the night-before-exam row", () => {
   const EXAM = addDays(ASOF, 1); // exam is tomorrow; "the night before" is ASOF itself
 
-  it("a 5.0h night-before row charges -REST_ACUTE_W·1.5", () => {
+  it("a 5.0h night-before row charges -REST_ACUTE_W·(SHORT_SLEEP_H - 5)", () => {
     const rest = [R(addDays(EXAM, -1), 5.0)];
     const out = restRead(rest, EXAM, ASOF);
-    const expectedMag = REST_ACUTE_W * 1.5;
-    expect(expectedMag).toBeCloseTo(1.2, 5);
-    expect(out.acuteTerm).toBeCloseTo(-1.2, 5);
+    const expectedMag = REST_ACUTE_W * (SHORT_SLEEP_H - 5.0);
+    expect(expectedMag).toBeCloseTo(0.8, 5);
+    expect(out.acuteTerm).toBeCloseTo(-0.8, 5);
   });
 
-  it("exactly 6.5h the night before charges nothing (the threshold is exclusive)", () => {
-    const rest = [R(addDays(EXAM, -1), 6.5)];
+  it("exactly SHORT_SLEEP_H the night before charges nothing (the threshold is exclusive)", () => {
+    const rest = [R(addDays(EXAM, -1), SHORT_SLEEP_H)];
     const out = restRead(rest, EXAM, ASOF);
     expect(out.acuteTerm).toBe(0);
+  });
+
+  it("E1 — a 6.2h night is no longer acute: one threshold, and it is SHORT_SLEEP_H", () => {
+    // The layer used to gate this term on a hardcoded 6.5h while stock.ts's
+    // encoding penalty gated on SHORT_SLEEP_H = 6.0, so a 6.2h night was a
+    // short night for one term and a full night for the other. It is now a
+    // full night for both.
+    const rest = [R(addDays(EXAM, -1), 6.2)];
+    expect(restRead(rest, EXAM, ASOF).acuteTerm).toBe(0);
   });
 
   it("no row dated exactly examDate-1 charges nothing, even with other nights logged", () => {
@@ -186,11 +198,11 @@ describe("restRead — acute term uses the night-before-exam row", () => {
     expect(out.acuteTerm).toBe(0);
   });
 
-  it("a 3.0h night-before row clamps at -REST_ACUTE_CAP (would be -2.8 uncapped)", () => {
+  it("a 3.0h night-before row clamps at -REST_ACUTE_CAP (would be -2.4 uncapped)", () => {
     const rest = [R(addDays(EXAM, -1), 3.0)];
     const out = restRead(rest, EXAM, ASOF);
-    const uncapped = REST_ACUTE_W * 3.5;
-    expect(uncapped).toBeCloseTo(2.8, 5);
+    const uncapped = REST_ACUTE_W * (SHORT_SLEEP_H - 3.0);
+    expect(uncapped).toBeCloseTo(2.4, 5);
     expect(out.acuteTerm).toBe(-REST_ACUTE_CAP);
     expect(out.acuteTerm).toBe(-2);
   });

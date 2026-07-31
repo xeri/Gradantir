@@ -1,9 +1,13 @@
 import type { GradeEntry, StudySession, SubjectMix, SubjectTraits, Topic, TopicMark } from "../../../types";
 import { pDate, round1 } from "../../utils";
 import {
+  ATTEND_FULL_PCT,
+  ATTEND_SHAVE_W,
   CARELESS_CREDIT,
   MASTERY_ALPHA,
   MASTERY_FLOOR_FRAC,
+  MASTERY_FULL_CREDIT_MARKS,
+  MASTERY_MIN_COVERAGE,
   MASTERY_MIN_MARKS,
   MASTERY_SCALE,
   MASTERY_W,
@@ -213,8 +217,8 @@ export function masteryRead(
   // Attendance shave: mass that "looks" covered by weight but was under-attended moves
   // to the uncovered (neutral) side — the covered term shrinks in proportion.
   let coveredMassShaved = coveredMass;
-  if (attendancePct != null && attendancePct < 95) {
-    coveredMassShaved = coveredMass * (1 - ((95 - attendancePct) / 100) * 0.5);
+  if (attendancePct != null && attendancePct < ATTEND_FULL_PCT) {
+    coveredMassShaved = coveredMass * (1 - ((ATTEND_FULL_PCT - attendancePct) / 100) * ATTEND_SHAVE_W);
   }
   const uncoveredMassShaved = 1 - coveredMassShaved;
   const coveredContribution = coveredMass > 0 ? coveredWeightedM * (coveredMassShaved / coveredMass) : 0;
@@ -223,9 +227,11 @@ export function masteryRead(
   const predictedPaper = P == null ? null : P * 100;
 
   const term =
-    modelMean == null || coveredMass < 0.3 || nMarkedTopics < MASTERY_MIN_MARKS
+    modelMean == null || coveredMass < MASTERY_MIN_COVERAGE || nMarkedTopics < MASTERY_MIN_MARKS
       ? 0
-      : MASTERY_W * Math.tanh(((predictedPaper as number) - modelMean) / MASTERY_SCALE) * Math.min(1, totalMarks / 6);
+      : MASTERY_W *
+        Math.tanh(((predictedPaper as number) - modelMean) / MASTERY_SCALE) *
+        Math.min(1, totalMarks / MASTERY_FULL_CREDIT_MARKS);
 
   return {
     topics: masteries,

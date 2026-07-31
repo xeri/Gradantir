@@ -1,6 +1,14 @@
 import type { Disruption } from "../../../types";
 import { addDays, pDate } from "../../utils";
-import { DISRUPT_CAP, DISRUPT_SEV, DISRUPT_TAU } from "./params";
+import {
+  DISRUPT_CAP,
+  DISRUPT_DUR_BASE,
+  DISRUPT_DUR_FULL_DAYS,
+  DISRUPT_DUR_SPAN,
+  DISRUPT_SEV,
+  DISRUPT_TAU,
+  SIGNAL_NOTE_FLOOR,
+} from "./params";
 
 /**
  * The disruption read (D5's "life happened" channel): a self-report of an
@@ -39,9 +47,6 @@ const negRound2 = (magnitude: number): number => {
   return r === 0 ? 0 : -r;
 };
 
-/** Note-emission floor: a contribution below this is indistinguishable from noise. */
-const NOTE_FLOOR = 0.05;
-
 const IDENTITY: DisruptRead = { term: 0, notes: [] };
 
 export function disruptionTerm(disruptions: Disruption[], examDate: string, asOf: string): DisruptRead {
@@ -51,7 +56,9 @@ export function disruptionTerm(disruptions: Disruption[], examDate: string, asOf
   const rows = live.map((d) => {
     const durationDays = d.days ?? 1;
     const end = addDays(d.date, durationDays - 1);
-    const durMult = 0.5 + (0.5 * Math.min(durationDays, 7)) / 7;
+    const durMult =
+      DISRUPT_DUR_BASE +
+      (DISRUPT_DUR_SPAN * Math.min(durationDays, DISRUPT_DUR_FULL_DAYS)) / DISRUPT_DUR_FULL_DAYS;
     const recovery = Math.exp(-Math.max(0, daysBetween(end, examDate)) / DISRUPT_TAU);
     const contribution = DISRUPT_SEV[d.kind] * durMult * recovery;
     return { d, contribution };
@@ -61,7 +68,7 @@ export function disruptionTerm(disruptions: Disruption[], examDate: string, asOf
   const term = negRound2(Math.min(total, DISRUPT_CAP));
 
   const notes = rows
-    .filter((r) => r.contribution >= NOTE_FLOOR)
+    .filter((r) => r.contribution >= SIGNAL_NOTE_FLOOR)
     .sort((a, b) => b.contribution - a.contribution)
     .map(({ d, contribution }) => {
       const suffix = d.days != null ? ` ×${d.days}D` : "";
