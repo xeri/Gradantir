@@ -3,6 +3,7 @@ import type { ForecastLog, GradeEntry, Subject, Topic, TopicMark } from "../../.
 import { addDays } from "../../utils";
 import { scoreT } from "../eval/scoring";
 import { SIGNAL_CAP, SIGNAL_PRIOR } from "../params";
+import { MASTERY_W, attendanceShave } from "./params";
 import { emptySignalBook, type SignalBook } from "./signalread";
 import { NO_SIGNAL_SKILL, signalSkill } from "./signalskill";
 
@@ -95,7 +96,11 @@ describe("signalSkill — zero scored rounds", () => {
 
 describe("signalSkill — CRPS pairing, same rule both sides", () => {
   it("you[i] is scoreT of the signal-adjusted mean/scale; model[i] is the stored log.crps", () => {
-    const sub = SUB({ attendancePct: 85 }); // deterministic -0.5 attendance term
+    const sub = SUB({ attendancePct: 85 }); // deterministic attendance term
+    // M4: the no-topics attendance charge is MASTERY_W · attendanceShave(pct),
+    // the same shave mastery.ts spends on covered mass — quoted from the shared
+    // owner rather than re-typed, so a change to the scale moves one place.
+    const attendanceAdj = -MASTERY_W * attendanceShave(85);
     const modelT = { mean: 80.3, scale: 3, df: 8 };
     const rawCrps = scoreT(modelT, 80).crps;
     const log = LOG({ resolvedAt: CUTOFF, realized: 80, point: 80.3, sd: 3, df: 8, crps: rawCrps });
@@ -103,7 +108,7 @@ describe("signalSkill — CRPS pairing, same rule both sides", () => {
     const skill = signalSkill([log], emptySignalBook, [sub], [], true);
 
     expect(skill.rounds).toBe(1);
-    const expectedYou = scoreT({ mean: 80.3 - 0.5, scale: 3, df: 8 }, 80).crps;
+    const expectedYou = scoreT({ mean: 80.3 + attendanceAdj, scale: 3, df: 8 }, 80).crps;
     expect(skill.youScore).toBeCloseTo(expectedYou, 10);
     expect(skill.modelScore).toBeCloseTo(rawCrps, 10);
     // The pairing must be a genuine improvement for the "w rises" suite below

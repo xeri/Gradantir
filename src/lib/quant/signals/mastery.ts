@@ -1,8 +1,6 @@
 import type { GradeEntry, StudySession, SubjectMix, SubjectTraits, Topic, TopicMark } from "../../../types";
 import { pDate, round1 } from "../../utils";
 import {
-  ATTEND_FULL_PCT,
-  ATTEND_SHAVE_W,
   CARELESS_CREDIT,
   MASTERY_ALPHA,
   MASTERY_FLOOR_FRAC,
@@ -12,6 +10,7 @@ import {
   MASTERY_SCALE,
   MASTERY_W,
   PREREQ_HEADROOM,
+  attendanceShave,
   halfLifeOf,
 } from "./params";
 
@@ -221,11 +220,10 @@ export function masteryRead(
   });
 
   // Attendance shave: mass that "looks" covered by weight but was under-attended moves
-  // to the uncovered (neutral) side — the covered term shrinks in proportion.
-  let coveredMassShaved = coveredMass;
-  if (attendancePct != null && attendancePct < ATTEND_FULL_PCT) {
-    coveredMassShaved = coveredMass * (1 - ((ATTEND_FULL_PCT - attendancePct) / 100) * ATTEND_SHAVE_W);
-  }
+  // to the uncovered (neutral) side — the covered term shrinks in proportion. M4: the
+  // shave fraction is owned by params.ts's attendanceShave and shared with signalRead's
+  // no-topics path, so one student's attendance means one thing on this layer.
+  const coveredMassShaved = coveredMass * (1 - attendanceShave(attendancePct));
   const uncoveredMassShaved = 1 - coveredMassShaved;
   const coveredContribution = coveredMass > 0 ? coveredWeightedM * (coveredMassShaved / coveredMass) : 0;
 

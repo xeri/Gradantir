@@ -1505,12 +1505,24 @@ $\text{pts} = -\text{ANX\_W}\cdot\max(0,\tfrac{\text{anx}-3}{2})\cdot\text{clamp
 an owl sitting at/before 9am charges `CHRONO_W` = 0.75 in full, a lark sitting at/after 3pm charges
 half that — measured effects here run well under a point, so the weight stays small.
 
-**Attendance** (`signalread.ts`) — only when a subject has no topic breakdown to let `mastery.ts`'s
-own attendance shave handle it instead: below `ATTEND_FULL_PCT` = 95 attended,
-$\text{pts} = -\min\big(\text{ATTEND\_NOTOPIC\_CAP},\
-\tfrac{(95-\text{pct})}{\text{ATTEND\_NOTOPIC\_SPAN\_PCT}}\cdot\text{ATTEND\_NOTOPIC\_W}\big)$.
-Note that this is a **different scale** from the topic path's mass shave — the same student is
-charged two ways, roughly twentyfold apart, selected by whether a topic list happens to exist.
+**Attendance** (`signalread.ts`, `mastery.ts`) — one function, one scale, spent two ways. The shave
+
+$$
+s(\text{pct}) = \text{clamp}\!\left(\frac{\text{ATTEND\_FULL\_PCT}-\text{pct}}{100},\,0,\,1\right)\cdot\text{ATTEND\_SHAVE\_W}, \qquad 95,\ 0.5
+$$
+
+is the share of syllabus an attendance shortfall is treated as having cost — half rather than all,
+because a missed class is usually recoverable from notes or a peer. A desk **with** a topic
+breakdown spends it on mass: `mastery.ts` moves $s$ of covered mass to the neutral side. A desk
+**without** one has no mass to move, so it spends the same $s$ on the mastery channel's own point
+weight, $\text{pts} = -\text{MASTERY\_W}\cdot s$ (−0.30 pts at 75% attended).
+
+The two paths cannot be numerically identical — the topic path's effect scales with the desk's own
+mastery-vs-model gap, which a desk with no topics has no way to know — but they now derive from one
+scale. Before this was unified they did not: the bare path charged $(95-\text{pct})/10 \cdot 0.5$ in
+**points** (−1.00 at 75% attended) while the topic path shaved $(95-\text{pct})/100 \cdot 0.5$ of
+**mass** (≈−0.05 pts on a typical gap). Same student, same attendance, roughly twentyfold apart,
+selected by nothing more than whether a topic list happened to exist.
 
 **Traits** (`traits.ts`) — the one variance-only term, never a level effect:
 

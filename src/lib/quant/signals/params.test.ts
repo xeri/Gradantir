@@ -13,7 +13,7 @@ import {
   SIGNAL_ADJ_CAP, SIGNAL_NOTE_FLOOR, SPACING_RECENT, SPACING_SAME_DAY,
   SPACING_STALE, STOCK_FLOOR, STOCK_W, TRAIT_BELIEF_MAX, TRAIT_BELIEF_W, TRAIT_MARKER_W,
   TRAIT_SAMPLING_W, TRAIT_SDMULT_CAP, TRAIT_TIME_MIN_SHARE, TRAIT_TIME_W,
-  halfLifeOf,
+  attendanceShave, halfLifeOf,
 } from "./params";
 import { SELF_POOL_CAP, SIGNAL_CAP, SIGNAL_PRIOR, READINESS_PRIOR } from "../params";
 
@@ -188,6 +188,37 @@ describe("E1 — the lifted constants", () => {
     expect(TRAIT_BELIEF_MAX).toBe(2);
     expect(TRAIT_BELIEF_W).toBe(0.05);
     expect(SIGNAL_NOTE_FLOOR).toBe(0.05);
+  });
+});
+
+describe("M4 — attendanceShave is the layer's only attendance scale", () => {
+  it("is silent when attendance was never recorded, and at or above full attendance", () => {
+    expect(attendanceShave(null)).toBe(0);
+    expect(attendanceShave(ATTEND_FULL_PCT)).toBe(0);
+    expect(attendanceShave(100)).toBe(0);
+  });
+
+  it("charges the shortfall at ATTEND_SHAVE_W", () => {
+    // 75% attended is 20 points short of 95 — a fifth of the year missed, half
+    // of which is treated as genuinely lost syllabus.
+    expect(attendanceShave(75)).toBeCloseTo(0.2 * ATTEND_SHAVE_W, 10);
+    expect(attendanceShave(85)).toBeCloseTo(0.1 * ATTEND_SHAVE_W, 10);
+  });
+
+  it("saturates at ATTEND_SHAVE_W rather than running away", () => {
+    // 0% attended is a 0.95 shortfall, not 1.0 — the ramp starts at
+    // ATTEND_FULL_PCT = 95, not at 100.
+    expect(attendanceShave(0)).toBeCloseTo(0.95 * ATTEND_SHAVE_W, 10);
+    // And a nonsense reading below zero clamps rather than running past the cap.
+    expect(attendanceShave(-50)).toBeCloseTo(ATTEND_SHAVE_W, 10);
+    for (const pct of [-100, -1, 0, 50, 94, 95, 100, 200]) {
+      expect(attendanceShave(pct)).toBeLessThanOrEqual(ATTEND_SHAVE_W);
+      expect(attendanceShave(pct)).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it("is continuous through the full-attendance boundary", () => {
+    expect(Math.abs(attendanceShave(94.99) - attendanceShave(ATTEND_FULL_PCT))).toBeLessThan(1e-3);
   });
 });
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { GradeEntry, StudySession, SubjectMix, SubjectTraits, Topic, TopicMark } from "../../../types";
 import { addDays, round1 } from "../../utils";
-import { MASTERY_MIN_MARKS, MASTERY_SCALE, MASTERY_W, PREREQ_HEADROOM } from "./params";
+import { MASTERY_MIN_MARKS, MASTERY_SCALE, MASTERY_W, PREREQ_HEADROOM, attendanceShave } from "./params";
 import { masteryRead, topicMastery } from "./mastery";
 
 /**
@@ -320,7 +320,11 @@ describe("masteryRead — attendance shave", () => {
 
     const coveredMass = 0.5;
     const coveredWeightedM = 0.5 * 0.8;
-    const shaveFactor = 1 - ((95 - 85) / 100) * 0.5; // 0.95
+    // M4: the shave fraction is owned by params.ts's attendanceShave and shared
+    // with signalRead's no-topics path, so one student's attendance means one
+    // thing on this layer. Independently: (95-85)/100 * 0.5 = 0.05.
+    expect(attendanceShave(85)).toBeCloseTo(0.05, 10);
+    const shaveFactor = 1 - attendanceShave(85); // 0.95
     const coveredMassShaved = coveredMass * shaveFactor; // 0.475
     const uncoveredMassShaved = 1 - coveredMassShaved; // 0.525
     const coveredContribution = coveredWeightedM * (coveredMassShaved / coveredMass); // 0.38

@@ -128,6 +128,27 @@ export const ATTEND_FULL_PCT = 95;
  */
 export const ATTEND_SHAVE_W = 0.5;
 
+/**
+ * M4 (audit Part I §4). THE layer's attendance scale — one function, one
+ * owner. Attendance used to be priced two ways, roughly twentyfold apart,
+ * selected by whether the desk happened to carry a topic list: a topic-bearing
+ * desk shaved (95−pct)/100 · 0.5 of its covered MASS, a bare desk charged
+ * (95−pct)/10 · 0.5 in POINTS. Same student, same attendance, two answers.
+ *
+ * Returns the share of syllabus mass the shortfall is treated as having cost,
+ * in [0, ATTEND_SHAVE_W]. `masteryRead` spends it on covered mass;
+ * `signalRead`'s no-topics path spends the SAME number on MASTERY_W, the point
+ * weight of the channel that mass would otherwise have moved. The two paths
+ * cannot be numerically identical — the topic path's effect scales with the
+ * desk's own mastery-vs-model gap, which a desk with no topics has no way to
+ * know — but they now derive from one scale rather than two.
+ */
+export function attendanceShave(attendancePct: number | null): number {
+  if (attendancePct == null) return 0;
+  const shortfall = (ATTEND_FULL_PCT - attendancePct) / 100;
+  return Math.min(Math.max(shortfall, 0), 1) * ATTEND_SHAVE_W;
+}
+
 /** Points charged per lost hour of recent-vs-baseline sleep (chronic short-sleep), capped at REST_CHRONIC_CAP. */
 export const REST_CHRONIC_W = 0.75;
 export const REST_CHRONIC_CAP = 1.5;
@@ -202,17 +223,6 @@ export const CHRONO_LATE_HOUR = 15;
 /** Fraction of CHRONO_W a lark's late sitting is charged. Replaced by M6. */
 export const CHRONO_LARK_FRAC = 0.5;
 
-/**
- * The no-topic-breakdown attendance path's own scale. REPLACED BY M4 in the
- * commit that unifies attendance — and these three names are exactly what
- * makes that defect legible: written out as knobs it is plain that this path
- * charges (95−pct)/10 · 0.5 in POINTS while mastery.ts shaves (95−pct)/100 ·
- * 0.5 of MASS. The same student, charged two ways roughly twentyfold apart,
- * selected by nothing more than whether a topic list happens to exist.
- */
-export const ATTEND_NOTOPIC_SPAN_PCT = 10;
-export const ATTEND_NOTOPIC_W = 0.5;
-export const ATTEND_NOTOPIC_CAP = 1;
 
 /** Added to the outcome sd multiplier for a low-determinism subject — loose marker judgement (vs formula marking) adds roughly 15-25% to score sd. */
 export const TRAIT_MARKER_W = 0.20;

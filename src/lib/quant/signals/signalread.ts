@@ -16,16 +16,14 @@ import {
   ANX_MID,
   ANX_SPAN,
   ANX_W,
-  ATTEND_FULL_PCT,
-  ATTEND_NOTOPIC_CAP,
-  ATTEND_NOTOPIC_SPAN_PCT,
-  ATTEND_NOTOPIC_W,
   CHRONO_EARLY_HOUR,
   CHRONO_LARK_FRAC,
   CHRONO_LATE_HOUR,
   CHRONO_W,
+  MASTERY_W,
   SIGNAL_ADJ_CAP,
   SIGNAL_NOTE_FLOOR,
+  attendanceShave,
 } from "./params";
 import { restRead } from "./rest";
 import { studyStock } from "./stock";
@@ -230,18 +228,19 @@ export function signalRead(
 
   // ATTENDANCE — only when there are no topics to let masteryRead's own
   // attendance shave handle it instead (see mastery.ts's coveredMassShaved).
-  if (
-    !dropped("attendance") &&
-    subjTopics.length === 0 &&
-    sub.attendancePct != null &&
-    sub.attendancePct < ATTEND_FULL_PCT
-  ) {
+  // M4 (audit Part I §4): the SAME shave fraction that path spends on mass,
+  // spent here on MASTERY_W — the point weight of the channel that shaved mass
+  // would otherwise have moved. This path used to carry a scale of its own,
+  // (95−pct)/10 · 0.5 in points, roughly twentyfold the topic path's charge at
+  // the same attendance, selected by nothing more than whether a topic list
+  // happened to exist.
+  if (!dropped("attendance") && subjTopics.length === 0 && sub.attendancePct != null) {
     const pct = sub.attendancePct;
-    const pts = -Math.min(
-      ATTEND_NOTOPIC_CAP,
-      ((ATTEND_FULL_PCT - pct) / ATTEND_NOTOPIC_SPAN_PCT) * ATTEND_NOTOPIC_W,
-    );
-    raw.attendance = { pts, note: () => `ATTENDANCE ${signed1(pts)} · ${pct}% ATTENDED` };
+    const shave = attendanceShave(pct);
+    if (shave > 0) {
+      const pts = -MASTERY_W * shave;
+      raw.attendance = { pts, note: () => `ATTENDANCE ${signed1(pts)} · ${pct}% ATTENDED` };
+    }
   }
 
   const keys = Object.keys(raw) as SignalTermKey[];

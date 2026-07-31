@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Disruption, GradeEntry, RestLog, Subject, SubjectTraits, StudySession, Topic, TopicMark, Upcoming } from "../../../types";
 import { addDays } from "../../utils";
 import { masteryRead, topicMastery } from "./mastery";
-import { ANX_W, CHRONO_W, SIGNAL_ADJ_CAP } from "./params";
+import { ANX_W, CHRONO_W, MASTERY_W, SIGNAL_ADJ_CAP, attendanceShave } from "./params";
 import { emptySignalBook, signalBoard, signalRead, type SignalBook } from "./signalread";
 import { studyStock } from "./stock";
 import { traitSdMult } from "./traits";
@@ -240,10 +240,12 @@ describe("signalRead — chronotype", () => {
 });
 
 describe("signalRead — attendance", () => {
-  it("no topics, attendancePct 85 -> -0.5", () => {
+  it("no topics, attendancePct 85 -> -MASTERY_W · attendanceShave(85)", () => {
     const out = signalRead(SUB({ attendancePct: 85 }), emptySignalBook, [], null, null, ASOF);
-    expect(out.adj).toBeCloseTo(-0.5, 5);
-    expect(out.terms).toEqual([{ key: "attendance", pts: -0.5, note: "ATTENDANCE -0.5 · 85% ATTENDED" }]);
+    const expected = -MASTERY_W * attendanceShave(85);
+    expect(expected).toBeCloseTo(-0.15, 10);
+    expect(out.adj).toBeCloseTo(expected, 5);
+    expect(out.terms).toEqual([{ key: "attendance", pts: expected, note: "ATTENDANCE -0.2 · 85% ATTENDED" }]);
   });
 
   it("with topics present, the standalone attendance term is absent (masteryRead handles it)", () => {
@@ -251,6 +253,56 @@ describe("signalRead — attendance", () => {
     const book: SignalBook = { ...emptySignalBook, topics };
     const out = signalRead(SUB({ attendancePct: 85 }), book, [], null, null, ASOF);
     expect(out.terms.find((t) => t.key === "attendance")).toBeUndefined();
+  });
+});
+
+describe("M4 — the two attendance paths spend one scale", () => {
+  it("the no-topics path charges MASTERY_W · attendanceShave(pct), in points", () => {
+    for (const pct of [90, 85, 75, 60]) {
+      const out = signalRead(SUB({ attendancePct: pct }), emptySignalBook, [], null, null, ASOF);
+      const term = out.terms.find((t) => t.key === "attendance");
+      expect(term, `expected an attendance term at ${pct}%`).toBeTruthy();
+      expect(term!.pts).toBeCloseTo(-MASTERY_W * attendanceShave(pct), 10);
+    }
+  });
+
+  it("is no longer an order of magnitude away from the topic path", () => {
+    // The defect: at 75% attended the no-topics path charged a flat -1.00 in
+    // POINTS while the topic path shaved 10% of covered MASS (~0.05pt on a
+    // typical gap) — the same student charged two ways, ~20x apart, selected
+    // by whether a topic list happened to exist.
+    const pts = signalRead(SUB({ attendancePct: 75 }), emptySignalBook, [], null, null, ASOF)
+      .terms.find((t) => t.key === "attendance")!.pts;
+    expect(Math.abs(pts)).toBeLessThan(1.0);
+    expect(pts).toBeCloseTo(-0.3, 10);
+  });
+
+  it("the shave the topic path applies is the SAME number the no-topics path spends", () => {
+    const pct = 75;
+    const topics = [T({ id: "t1", weightPct: 100 })];
+    const entry = E({ id: "e1" });
+    const mark = MK({ id: "m1", entryId: "e1", topicId: "t1", scorePct: 80 });
+    const mast = topicMastery(topics, [mark], [], [entry], null, null, ASOF);
+
+    // Fully covered desk, so coveredMassShaved/coveredMass is exactly 1 - s and
+    // the shave is readable straight off predictedPaper's move toward the model.
+    const model = 60;
+    const full = masteryRead(topics, mast, model, null, ASOF);
+    const short = masteryRead(topics, mast, model, pct, ASOF);
+    const moved = (full.predictedPaper as number) - (short.predictedPaper as number);
+    const s = attendanceShave(pct);
+    expect(moved).toBeCloseTo(s * ((full.predictedPaper as number) - model), 4);
+
+    // And the no-topics path spends that identical s.
+    const bare = signalRead(SUB({ attendancePct: pct }), emptySignalBook, [], null, null, ASOF)
+      .terms.find((t) => t.key === "attendance")!.pts;
+    expect(bare).toBeCloseTo(-MASTERY_W * s, 10);
+  });
+
+  it("never fires at or above full attendance, on either path", () => {
+    const bare = signalRead(SUB({ attendancePct: 95 }), emptySignalBook, [], null, null, ASOF);
+    expect(bare.terms.find((t) => t.key === "attendance")).toBeUndefined();
+    expect(attendanceShave(95)).toBe(0);
   });
 });
 
