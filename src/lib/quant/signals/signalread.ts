@@ -54,6 +54,23 @@ export type SignalTermKey =
   | "chronotype"
   | "attendance";
 
+/**
+ * The canonical term order — the declaration order of SignalTermKey, named so
+ * that anything iterating the channels (the SIGNALS table's columns, the
+ * Shapley player list) does so identically. `Object.keys` on the candidate
+ * record would follow whichever branch happened to fire, which is stable today
+ * and would silently stop being so the first time a branch moves.
+ */
+export const SIGNAL_TERM_ORDER: readonly SignalTermKey[] = [
+  "stock", "mastery", "rest", "disruption", "anxiety", "chronotype", "attendance",
+] as const;
+
+/** One player in the clamped coalitional game — see shapley.ts. */
+export interface SignalRawTerm {
+  key: SignalTermKey;
+  pts: number;
+}
+
 export interface SignalTerm {
   key: SignalTermKey;
   pts: number;
@@ -78,6 +95,19 @@ export interface SignalRead {
   sdMult: number;
   /** Only terms with |pts| >= 0.05, sorted harshest first. */
   terms: SignalTerm[];
+  /**
+   * Every candidate that fired with a NON-ZERO read, in SIGNAL_TERM_ORDER and
+   * UNFILTERED by the 0.05pt display floor — the player list of the clamped
+   * coalitional game `shapley.ts` decomposes (audit Part I §3.3). A sub-floor
+   * term earns no row in `terms` but still shifts what its coalition partners
+   * are worth once the clamp binds, so the game must see it.
+   *
+   * An EXACT zero is omitted: it is a null player, worth 0 itself and leaving
+   * every other φ unchanged, so dropping it costs nothing and keeps this
+   * module's load-bearing identity intact — an untouched book fires stock,
+   * mastery and rest at 0.00 and must still read `rawTerms: []`.
+   */
+  rawTerms: SignalRawTerm[];
   reasons: string[];
 }
 
@@ -246,7 +276,7 @@ export function signalRead(
     }
   }
 
-  const keys = Object.keys(raw) as SignalTermKey[];
+  const keys = SIGNAL_TERM_ORDER.filter((k) => raw[k] != null);
   const sum = keys.reduce((a, k) => a + raw[k]!.pts, 0);
   const adj = round2(clamp(sum, -SIGNAL_ADJ_CAP, SIGNAL_ADJ_CAP));
 
@@ -260,6 +290,14 @@ export function signalRead(
       return a.pts < 0 ? -1 : 1;
     });
 
+  // The Shapley player list: every candidate that actually contributed, floor
+  // or no floor. An exact zero is a null player — worth nothing itself and
+  // leaving every other φ unchanged — so it is dropped, which is what keeps an
+  // untouched book reading `rawTerms: []`.
+  const rawTerms: SignalRawTerm[] = keys
+    .filter((k) => raw[k]!.pts !== 0)
+    .map((k) => ({ key: k, pts: raw[k]!.pts }));
+
   const sdMult = traitSdMult(sub.traits ?? null, unevenness, timeErrorShareOf(subjMarks), sub.belief ?? null);
 
   return {
@@ -268,6 +306,7 @@ export function signalRead(
     rawSum: sum,
     sdMult,
     terms,
+    rawTerms,
     reasons: terms.map((t) => t.note),
   };
 }

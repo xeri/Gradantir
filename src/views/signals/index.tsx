@@ -86,7 +86,7 @@ function soonestNext(subjectId: string, upcoming: Upcoming[], asOf: string): Nex
   return soonest == null ? null : { date: soonest.date, hour: soonest.hour ?? null, weight: soonest.weight ?? null };
 }
 
-const IDENTITY_READ = (subjectId: string): SignalRead => ({ subjectId, adj: 0, rawSum: 0, sdMult: 1, terms: [], reasons: [] });
+const IDENTITY_READ = (subjectId: string): SignalRead => ({ subjectId, adj: 0, rawSum: 0, sdMult: 1, terms: [], rawTerms: [], reasons: [] });
 /** Mirrors `mastery.ts`'s own (unexported) `MASTERY_IDENTITY` — the fallback
  *  for a live subject `masteryBySubject` has not (yet) keyed, which should
  *  never happen since both maps iterate the identical `liveSubs`. */

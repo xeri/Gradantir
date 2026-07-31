@@ -5,9 +5,9 @@ import type { Disruption, GradeEntry, RestLog, Subject, SubjectTraits, StudySess
 import { addDays } from "../../utils";
 import { masteryRead, topicMastery } from "./mastery";
 import {
-  ANX_W, CHRONO_PEAK_HOUR, CHRONO_TAPER_H, CHRONO_W, MASTERY_W, SIGNAL_ADJ_CAP, attendanceShave,
+  ANX_W, CHRONO_PEAK_HOUR, CHRONO_TAPER_H, CHRONO_W, MASTERY_W, SIGNAL_ADJ_CAP, SIGNAL_NOTE_FLOOR, attendanceShave,
 } from "./params";
-import { emptySignalBook, signalBoard, signalRead, type SignalBook } from "./signalread";
+import { SIGNAL_TERM_ORDER, emptySignalBook, signalBoard, signalRead, type SignalBook } from "./signalread";
 import { studyStock } from "./stock";
 import { traitSdMult } from "./traits";
 
@@ -103,18 +103,18 @@ const TR = (over: Partial<SubjectTraits> = {}): SubjectTraits => ({
 describe("signalRead — empty-book identity", () => {
   it("adj 0, sdMult 1, terms [] with no data at all", () => {
     const out = signalRead(SUB(), emptySignalBook, [], null, null, ASOF);
-    expect(out).toEqual({ subjectId: "s1", adj: 0, rawSum: 0, sdMult: 1, terms: [], reasons: [] });
+    expect(out).toEqual({ subjectId: "s1", adj: 0, rawSum: 0, sdMult: 1, terms: [], rawTerms: [], reasons: [] });
   });
 
   it("holds even with a live upcoming sitting present", () => {
     const next = { date: addDays(ASOF, 5), hour: 10, weight: 40 };
     const out = signalRead(SUB(), emptySignalBook, [], next, null, ASOF);
-    expect(out).toEqual({ subjectId: "s1", adj: 0, rawSum: 0, sdMult: 1, terms: [], reasons: [] });
+    expect(out).toEqual({ subjectId: "s1", adj: 0, rawSum: 0, sdMult: 1, terms: [], rawTerms: [], reasons: [] });
   });
 
   it("holds with a modelMean supplied and no signal data", () => {
     const out = signalRead(SUB(), emptySignalBook, [], null, 65, ASOF);
-    expect(out).toEqual({ subjectId: "s1", adj: 0, rawSum: 0, sdMult: 1, terms: [], reasons: [] });
+    expect(out).toEqual({ subjectId: "s1", adj: 0, rawSum: 0, sdMult: 1, terms: [], rawTerms: [], reasons: [] });
   });
 });
 
@@ -476,7 +476,7 @@ describe("signalBoard", () => {
     // s2's only Exam carries no hour -> chronotype cannot fire.
     expect(board.get("s2")!.terms.some((t) => t.key === "chronotype")).toBe(false);
     // s3 has no upcoming at all -> identity.
-    expect(board.get("s3")).toEqual({ subjectId: "s3", adj: 0, rawSum: 0, sdMult: 1, terms: [], reasons: [] });
+    expect(board.get("s3")).toEqual({ subjectId: "s3", adj: 0, rawSum: 0, sdMult: 1, terms: [], rawTerms: [], reasons: [] });
   });
 });
 
@@ -494,5 +494,53 @@ describe("signalRead — determinism", () => {
     const out1 = signalRead(sub, book, entries, next, 55, ASOF);
     const out2 = signalRead(sub, book, entries, next, 55, ASOF);
     expect(out2).toEqual(out1);
+  });
+});
+
+/**
+ * §3.3 of the prediction-math audit. The Shapley game is played over EVERY
+ * candidate a desk fired, including the ones too small to earn a display row —
+ * a 0.03pt contribution still shifts what its coalition partners are worth
+ * once the clamp is in play. `terms` is the reasons list and stays filtered;
+ * `rawTerms` is the player list and is not.
+ */
+describe("rawTerms — the coalitional game's player list", () => {
+  // 94% attended is a 0.005 shave, i.e. -0.015pt on MASTERY_W: a genuine
+  // contribution, an order of magnitude under the 0.05pt display floor.
+  const SUB_SUBFLOOR = SUB({ attendancePct: 94 });
+
+  it("carries a sub-floor candidate that `terms` drops", () => {
+    const out = signalRead(SUB_SUBFLOOR, emptySignalBook, [], null, null, ASOF);
+    const att = out.rawTerms.find((t) => t.key === "attendance");
+    expect(att, "the attendance candidate must be a player").toBeTruthy();
+    expect(att!.pts).not.toBe(0);
+    expect(Math.abs(att!.pts)).toBeLessThan(SIGNAL_NOTE_FLOOR);
+    expect(out.terms.find((t) => t.key === "attendance"), "and must NOT earn a display row").toBeUndefined();
+  });
+
+  it("sums to rawSum exactly — the players ARE the pre-clamp total", () => {
+    const out = signalRead(SUB_SUBFLOOR, emptySignalBook, [], null, null, ASOF);
+    expect(out.rawTerms.reduce((a, t) => a + t.pts, 0)).toBeCloseTo(out.rawSum, 12);
+  });
+
+  it("is ordered by SIGNAL_TERM_ORDER, never by which branch happened to fire first", () => {
+    const book: SignalBook = { ...emptySignalBook, profile: { chronotype: "owl", testAnxiety: null } };
+    const next = { date: addDays(ASOF, 5), hour: 8, weight: null };
+    const out = signalRead(SUB_SUBFLOOR, book, [], next, null, ASOF);
+    // Two players fire here (chronotype and attendance) and stock/mastery/rest
+    // all read exactly 0, so this also pins the null-player filter.
+    expect(out.rawTerms.map((t) => t.key)).toEqual(["chronotype", "attendance"]);
+    const idx = out.rawTerms.map((t) => SIGNAL_TERM_ORDER.indexOf(t.key));
+    expect(idx).toEqual([...idx].sort((a, b) => a - b));
+  });
+
+  it("omits an exact zero — a null player is worth nothing and moves no one", () => {
+    // The empty-book identity: stock, mastery and rest all fire, all at 0.00.
+    expect(signalRead(SUB(), emptySignalBook, [], null, null, ASOF).rawTerms).toEqual([]);
+  });
+
+  it("declares every key exactly once", () => {
+    expect(new Set(SIGNAL_TERM_ORDER).size).toBe(SIGNAL_TERM_ORDER.length);
+    expect(SIGNAL_TERM_ORDER.length).toBe(7);
   });
 });

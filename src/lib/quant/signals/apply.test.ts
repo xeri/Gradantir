@@ -28,6 +28,7 @@ const read = (over: Partial<SignalRead>): SignalRead => ({
   rawSum: 0,
   sdMult: 1,
   terms: [],
+  rawTerms: [],
   reasons: [],
   ...over,
 });

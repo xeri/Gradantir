@@ -70,6 +70,7 @@ describe("signal.adjust — the clamp step quotes rawSum, never a re-summed term
       rawSum: 1.23,
       sdMult: 1.1,
       terms: [{ key: "stock", pts: 1.2, note: "STUDY +1.2 · 14D VS OWN NORM" }],
+      rawTerms: [],
       reasons: ["STUDY +1.2 · 14D VS OWN NORM"],
     };
     const ctx: DeriveCtx = {
@@ -99,6 +100,7 @@ describe("signal.adjust — the clamp step quotes rawSum, never a re-summed term
         { key: "stock", pts: 3, note: "STUDY +3.0 · 14D VS OWN NORM" },
         { key: "mastery", pts: 2.5, note: "MASTERY +2.5 · BOOK SAYS 70.0 VS DESK 60.0" },
       ],
+      rawTerms: [],
       reasons: [],
     };
     const ctx: DeriveCtx = {
@@ -130,6 +132,7 @@ describe("signal.adjust — the clamp step quotes rawSum, never a re-summed term
       rawSum: 4.25,
       sdMult: 1.0,
       terms: [{ key: "stock", pts: 3.9, note: "STUDY +3.9 · 14D VS OWN NORM" }],
+      rawTerms: [],
       reasons: [],
     };
     const ctx: DeriveCtx = {
@@ -151,6 +154,7 @@ describe("signal.adjust — ADJ and W·ADJ are different figures behind the same
       rawSum: -2,
       sdMult: 1.2,
       terms: [{ key: "rest", pts: -2, note: "REST -2.0 · SLEEP DETERIORATING" }],
+      rawTerms: [],
       reasons: [],
     };
     const fit = FIT({ w: 0.3 });
