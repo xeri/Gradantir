@@ -1447,10 +1447,22 @@ cumulative subject) with the model's own mean on the uncovered share, then price
 from that same model mean, gated on enough marked topics and dampened while the count is thin:
 
 $$
-\text{term}_{\text{mastery}} = \text{MASTERY\_W} \cdot \tanh\!\left(\frac{100P - \text{modelMean}}{\text{MASTERY\_SCALE}}\right) \cdot \min\!\left(1, \frac{\text{totalMarks}}{6}\right),
+\text{term}_{\text{mastery}} = \text{MASTERY\_W} \cdot \tanh\!\left(\frac{100P - \text{modelMean}}{\text{MASTERY\_SCALE}}\right) \cdot \min\!\left(1, \frac{\text{totalMarks}}{\text{MASTERY\_FULL\_CREDIT\_MARKS}}\right),
 $$
 
-zero unless covered mass $\ge 0.3$ and marked topics $\ge$ `MASTERY_MIN_MARKS` = 3, with
+The prereq gate is a **cap on the weakest prerequisite**, in the subject's own cumulativeness $C$:
+
+$$
+m_{\text{eff}} = (1-C)\,m_{\text{eff}}^{0} + C\cdot\min\!\Big(m_{\text{eff}}^{0},\ \min_j m_{\text{eff},j}^{0} + \text{PREREQ\_HEADROOM}\Big)
+$$
+
+— the **minimum** over the named prerequisites, not their mean. A mean would let one failed
+prerequisite hide behind two strong ones, which is not a cap; the code averaged them for a whole
+release while this section and `PREREQ_HEADROOM`'s own comment both described the cap, and the gate
+now has a test (`mastery.test.ts`, "caps on the WEAKEST prerequisite").
+
+The term is zero unless covered mass $\ge$ `MASTERY_MIN_COVERAGE` = 0.3 and marked topics $\ge$
+`MASTERY_MIN_MARKS` = 3, with
 `MASTERY_W` = 3.0 and `MASTERY_SCALE` = 8 — the largest single weight in the layer, because it is the
 only term reading a measurement rather than a report.
 

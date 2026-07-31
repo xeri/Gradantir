@@ -157,6 +157,34 @@ describe("topicMastery — prereq gate", () => {
     expect(a.mEff).toBeCloseTo(expectedGated, 5);
   });
 
+  it("M3 — caps on the WEAKEST prerequisite, not on their mean", () => {
+    // Three prereqs at 0.9 / 0.9 / 0.1. Their mean is 0.6333; their minimum is
+    // 0.1. Under the old mean gate the dependent topic sat at min(0.9, 0.883)
+    // = 0.883 and was barely touched — one failed prerequisite hiding behind
+    // two strong ones, which is not a cap. PREREQ_HEADROOM's own comment ("the
+    // weakest prerequisite") and README §30 ("a shaky prerequisite caps
+    // everything built on it") both already said so.
+    const topics = [T({ id: "p1" }), T({ id: "p2" }), T({ id: "p3" }), T({ id: "a", prereqIds: ["p1", "p2", "p3"] })];
+    const entries = [E({ id: "e1" })];
+    const marks = [
+      MK({ id: "m1", entryId: "e1", topicId: "p1", scorePct: 90 }),
+      MK({ id: "m2", entryId: "e1", topicId: "p2", scorePct: 90 }),
+      MK({ id: "m3", entryId: "e1", topicId: "p3", scorePct: 10 }),
+      MK({ id: "m4", entryId: "e1", topicId: "a", scorePct: 90 }),
+    ];
+    // C = 1, so mEff is entirely the gated branch: min(mEff0, gate + HEADROOM).
+    const results = topicMastery(topics, marks, [], entries, TR({ cumulativeness: 1 }), null, ASOF);
+    const a = results.find((r) => r.topicId === "a")!;
+
+    const minPrereq = 0.1;
+    expect(a.mEff).toBeCloseTo(Math.min(0.9, minPrereq + PREREQ_HEADROOM), 5);
+    expect(a.mEff).toBeCloseTo(0.35, 5);
+
+    // And explicitly NOT the mean gate the code used to apply.
+    const meanPrereq = (0.9 + 0.9 + 0.1) / 3;
+    expect(a.mEff).not.toBeCloseTo(Math.min(0.9, meanPrereq + PREREQ_HEADROOM), 3);
+  });
+
   it("C=0 leaves the topic ungated (mEff = mEff0)", () => {
     const prereq = T({ id: "p" });
     const topic = T({ id: "a", prereqIds: ["p"] });

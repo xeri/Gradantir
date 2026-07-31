@@ -139,9 +139,15 @@ export function topicMastery(
 
     const prereqIds = topic.prereqIds ?? [];
     if (traits && prereqIds.length > 0 && prereqIds.every((id) => topicIds.has(id))) {
-      const meanPrereq = prereqIds.reduce((a, id) => a + mEff0ByTopic.get(id)!, 0) / prereqIds.length;
+      // M3 (audit Part I §4): the WEAKEST prerequisite, not their mean. A mean
+      // lets one failed prerequisite hide behind two strong ones, which is not
+      // a cap — and both PREREQ_HEADROOM's own comment ("the weakest
+      // prerequisite") and README §30 ("a shaky prerequisite caps everything
+      // built on it") already said so. The doctrine was right; the code was
+      // wrong, for a whole release, because the doctrine had no test.
+      const minPrereq = prereqIds.reduce((a, id) => Math.min(a, mEff0ByTopic.get(id)!), Infinity);
       const C = traits.cumulativeness;
-      mEff = (1 - C) * mEff0 + C * Math.min(mEff0, meanPrereq + PREREQ_HEADROOM);
+      mEff = (1 - C) * mEff0 + C * Math.min(mEff0, minPrereq + PREREQ_HEADROOM);
     }
 
     return {
