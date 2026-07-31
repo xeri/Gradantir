@@ -1509,9 +1509,21 @@ recovery time constant `DISRUPT_TAU` = 10 days, whole-channel cap `DISRUPT_CAP` 
 near a live sitting. Anxiety prices only the high-arousal Yerkes-Dodson arm — a heavier-than-typical
 paper charges a self-reported anxious student, an easy one never credits them:
 $\text{pts} = -\text{ANX\_W}\cdot\max(0,\tfrac{\text{anx}-3}{2})\cdot\text{clamp}(\tfrac{\text{weight}}{\text{typicalWeight}}-1,\,0,\,1)$,
-`ANX_W` = 1.5. Chronotype prices sitting-time synchrony against a self-reported owl/lark:
-an owl sitting at/before 9am charges `CHRONO_W` = 0.75 in full, a lark sitting at/after 3pm charges
-half that — measured effects here run well under a point, so the weight stays small.
+`ANX_W` = 1.5. Chronotype prices sitting-time synchrony against a self-reported owl/lark as a
+**continuous** function of the sitting hour:
+
+$$
+\text{pts} = -\text{CHRONO\_W}\cdot\tanh\!\left(\frac{|h - \text{CHRONO\_PEAK\_HOUR}[c]|}{\text{CHRONO\_TAPER\_H}}\right), \qquad \text{lark } 9,\ \text{owl } 16,\ \text{CHRONO\_W} = 0.75,\ \text{CHRONO\_TAPER\_H} = 6
+$$
+
+— zero at the chronotype's own peak, saturating past half a school day out, and identical for both
+chronotypes at equal misalignment. It used to be a **cliff**: an owl sitting at or before 9am was
+charged the full `CHRONO_W` and an owl at 10am exactly nothing, so a one-hour timetable change swung
+the entire channel. The old owl-full/lark-half asymmetry carried no cited argument and was dropped;
+the synchrony literature reports the effect in both directions. `Profile.chronotype` is a bare
+category with no strength field, so the charge scales on misalignment only, never on how strongly
+the student holds the self-report. Measured effects here run well under a point, so the weight stays
+small.
 
 **Attendance** (`signalread.ts`, `mastery.ts`) — one function, one scale, spent two ways. The shave
 

@@ -1,4 +1,4 @@
-import type { DisruptionKind, SessionKind, SubjectMix } from "../../../types";
+import type { Chronotype, DisruptionKind, SessionKind, SubjectMix } from "../../../types";
 
 /**
  * Formula constants for the life-signals layer (package-local, the pool.ts
@@ -212,16 +212,37 @@ export const ANX_SPAN = 2;
 export const CHRONO_W = 0.75;
 
 /**
- * Sitting hour at or before which an owl is charged the full CHRONO_W.
- * REPLACED BY M6 (a continuous misalignment function) in the commit after
- * this one — lifted here only so that, at THIS commit, README §30's "never
- * hand-typed" claim is true of the code as it actually stands.
+ * M6 (audit Part I §4). Peak hour of day by self-reported chronotype — the
+ * hour at which the synchrony effect is nil and the charge is zero. Larks peak
+ * mid-morning, owls mid-to-late afternoon, and the charge grows smoothly with
+ * distance from that hour in EITHER direction, since the synchrony literature
+ * reports off-peak testing costing performance whichever side of the peak it
+ * falls on.
+ *
+ * This replaces a CLIFF: the term used to charge an owl the full CHRONO_W for
+ * a sitting at or before 9am and exactly nothing at 10am, so a one-hour
+ * timetable change swung an entire channel.
+ *
+ * The old owl-full / lark-half asymmetry is DROPPED rather than kept: no cited
+ * argument supported charging larks half, and the same literature reports the
+ * effect in both directions. Note also that `Profile.chronotype` is a bare
+ * category with no strength field, so the charge cannot be scaled by how
+ * strongly the student holds the self-report — only by how far the sitting
+ * sits from the peak. That is a data-model limit, stated here rather than left
+ * for a reader to wonder about.
  */
-export const CHRONO_EARLY_HOUR = 9;
-/** Sitting hour at or after which a lark is charged. Replaced by M6. */
-export const CHRONO_LATE_HOUR = 15;
-/** Fraction of CHRONO_W a lark's late sitting is charged. Replaced by M6. */
-export const CHRONO_LARK_FRAC = 0.5;
+export const CHRONO_PEAK_HOUR: Record<Chronotype, number> = {
+  lark: 9,
+  owl: 16,
+};
+
+/**
+ * Hours of misalignment at which the chronotype charge reaches tanh(1) = 0.76
+ * of CHRONO_W. Six hours is roughly half a school day: a sitting half a day
+ * away from your own peak is as mistimed as a timetable can make it, and the
+ * tanh saturates rather than running on past that.
+ */
+export const CHRONO_TAPER_H = 6;
 
 
 /** Added to the outcome sd multiplier for a low-determinism subject — loose marker judgement (vs formula marking) adds roughly 15-25% to score sd. */

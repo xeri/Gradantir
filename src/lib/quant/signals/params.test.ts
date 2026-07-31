@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
-  ANX_MID, ANX_SPAN, ANX_W, ATTEND_FULL_PCT, ATTEND_SHAVE_W, CARELESS_CREDIT, CHRONO_W,
+  ANX_MID, ANX_SPAN, ANX_W, ATTEND_FULL_PCT, ATTEND_SHAVE_W, CARELESS_CREDIT,
+  CHRONO_PEAK_HOUR, CHRONO_TAPER_H, CHRONO_W,
   DEFAULT_HALF_LIFE, DISRUPT_CAP, DISRUPT_DUR_BASE, DISRUPT_DUR_FULL_DAYS, DISRUPT_DUR_SPAN,
   DISRUPT_SEV, DISRUPT_TAU,
   ENCODING_PENALTY, HALF_LIFE, MASTERY_ALPHA, MASTERY_FLOOR_FRAC, MASTERY_FULL_CREDIT_MARKS,
@@ -188,6 +189,20 @@ describe("E1 — the lifted constants", () => {
     expect(TRAIT_BELIEF_MAX).toBe(2);
     expect(TRAIT_BELIEF_W).toBe(0.05);
     expect(SIGNAL_NOTE_FLOOR).toBe(0.05);
+  });
+});
+
+describe("M6 — the chronotype peaks", () => {
+  it("puts the lark's peak in the morning and the owl's in the afternoon", () => {
+    expect(CHRONO_PEAK_HOUR.lark).toBeLessThan(CHRONO_PEAK_HOUR.owl);
+    expect(CHRONO_PEAK_HOUR.lark).toBeGreaterThanOrEqual(0);
+    expect(CHRONO_PEAK_HOUR.owl).toBeLessThanOrEqual(23);
+  });
+
+  it("tapers over a plausible number of hours", () => {
+    expect(CHRONO_TAPER_H).toBeGreaterThan(0);
+    // Half a school day out is the saturating case, not half an hour.
+    expect(CHRONO_TAPER_H).toBeGreaterThanOrEqual(3);
   });
 });
 

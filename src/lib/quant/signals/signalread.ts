@@ -16,9 +16,8 @@ import {
   ANX_MID,
   ANX_SPAN,
   ANX_W,
-  CHRONO_EARLY_HOUR,
-  CHRONO_LARK_FRAC,
-  CHRONO_LATE_HOUR,
+  CHRONO_PEAK_HOUR,
+  CHRONO_TAPER_H,
   CHRONO_W,
   MASTERY_W,
   SIGNAL_ADJ_CAP,
@@ -218,20 +217,22 @@ export function signalRead(
   }
 
   // CHRONOTYPE — sitting-time synchrony vs the self-reported chronotype.
+  // M6 (audit Part I §4): continuous in the sitting hour. This used to be a
+  // cliff — an owl at 9am was charged the full CHRONO_W and an owl at 10am
+  // exactly nothing — so a one-hour timetable change swung the whole channel.
+  // The charge now grows smoothly with distance from the chronotype's own peak
+  // hour, in either direction, and both chronotypes are charged alike at equal
+  // misalignment (see CHRONO_PEAK_HOUR on why the old lark-half discount went).
   const chronotype = book.profile?.chronotype ?? null;
   if (!dropped("chronotype") && chronotype != null && next?.hour != null) {
-    const hour = next.hour;
-    let pts = 0;
-    let label = "";
-    if (chronotype === "owl" && hour <= CHRONO_EARLY_HOUR) {
-      pts = -CHRONO_W;
-      label = "EARLY";
-    } else if (chronotype === "lark" && hour >= CHRONO_LATE_HOUR) {
-      pts = -CHRONO_W * CHRONO_LARK_FRAC;
-      label = "LATE";
-    }
+    const offPeak = next.hour - CHRONO_PEAK_HOUR[chronotype];
+    const pts = -CHRONO_W * Math.tanh(Math.abs(offPeak) / CHRONO_TAPER_H);
     if (pts !== 0) {
-      raw.chronotype = { pts, note: () => `CHRONOTYPE ${signed1(pts)} · ${label} SITTING` };
+      const label = offPeak < 0 ? "EARLY" : "LATE";
+      raw.chronotype = {
+        pts,
+        note: () => `CHRONOTYPE ${signed1(pts)} · ${Math.abs(offPeak)}H ${label} OF PEAK`,
+      };
     }
   }
 

@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { Disruption, GradeEntry, RestLog, Subject, SubjectTraits, StudySession, Topic, TopicMark, Upcoming } from "../../../types";
 import { addDays } from "../../utils";
 import { masteryRead, topicMastery } from "./mastery";
-import { ANX_W, CHRONO_W, MASTERY_W, SIGNAL_ADJ_CAP, attendanceShave } from "./params";
+import {
+  ANX_W, CHRONO_PEAK_HOUR, CHRONO_TAPER_H, CHRONO_W, MASTERY_W, SIGNAL_ADJ_CAP, attendanceShave,
+} from "./params";
 import { emptySignalBook, signalBoard, signalRead, type SignalBook } from "./signalread";
 import { studyStock } from "./stock";
 import { traitSdMult } from "./traits";
@@ -212,22 +214,6 @@ describe("signalRead — anxiety", () => {
 describe("signalRead — chronotype", () => {
   const book = (chronotype: "lark" | "owl" | null): SignalBook => ({ ...emptySignalBook, profile: { testAnxiety: null, chronotype } });
 
-  it("owl + hour 8 -> -0.75", () => {
-    const out = signalRead(SUB(), book("owl"), [], { date: addDays(ASOF, 1), hour: 8, weight: null }, null, ASOF);
-    expect(out.adj).toBeCloseTo(-CHRONO_W, 5);
-  });
-
-  it("owl + hour 10 -> 0", () => {
-    const out = signalRead(SUB(), book("owl"), [], { date: addDays(ASOF, 1), hour: 10, weight: null }, null, ASOF);
-    expect(out.adj).toBe(0);
-  });
-
-  it("lark + hour 16 -> -CHRONO_W/2, rounded 2dp away from zero (-0.38)", () => {
-    const out = signalRead(SUB(), book("lark"), [], { date: addDays(ASOF, 1), hour: 16, weight: null }, null, ASOF);
-    expect(-CHRONO_W / 2).toBeCloseTo(-0.375, 5);
-    expect(out.adj).toBe(-0.38);
-  });
-
   it("profile null -> 0", () => {
     const out = signalRead(SUB(), emptySignalBook, [], { date: addDays(ASOF, 1), hour: 8, weight: null }, null, ASOF);
     expect(out.adj).toBe(0);
@@ -236,6 +222,65 @@ describe("signalRead — chronotype", () => {
   it("hour null -> 0", () => {
     const out = signalRead(SUB(), book("owl"), [], { date: addDays(ASOF, 1), hour: null, weight: null }, null, ASOF);
     expect(out.adj).toBe(0);
+  });
+});
+
+describe("M6 — chronotype is continuous in the sitting hour", () => {
+  const book = (chronotype: "lark" | "owl"): SignalBook => ({ ...emptySignalBook, profile: { testAnxiety: null, chronotype } });
+
+  const chronoPts = (chronotype: "lark" | "owl", hour: number): number => {
+    const out = signalRead(SUB(), book(chronotype), [], { date: addDays(ASOF, 1), hour, weight: null }, null, ASOF);
+    return out.terms.find((t) => t.key === "chronotype")?.pts ?? 0;
+  };
+
+  it("no longer swings the whole channel between 9am and 10am", () => {
+    // The defect: an owl at 9 was charged the full -CHRONO_W and an owl at 10
+    // exactly nothing, so a one-hour timetable change moved an entire channel.
+    const step = Math.abs(chronoPts("owl", 9) - chronoPts("owl", 10));
+    expect(step).toBeLessThan(CHRONO_W / 5);
+  });
+
+  it("has no step anywhere on the sitting day", () => {
+    for (const c of ["owl", "lark"] as const) {
+      for (let h = 6; h < 21; h++) {
+        expect(Math.abs(chronoPts(c, h) - chronoPts(c, h + 1)), `${c} ${h}->${h + 1}`)
+          .toBeLessThan(CHRONO_W / 5);
+      }
+    }
+  });
+
+  it("is silent at each chronotype's own peak", () => {
+    expect(chronoPts("owl", CHRONO_PEAK_HOUR.owl)).toBe(0);
+    expect(chronoPts("lark", CHRONO_PEAK_HOUR.lark)).toBe(0);
+  });
+
+  it("grows monotonically with misalignment and never exceeds CHRONO_W", () => {
+    for (const c of ["owl", "lark"] as const) {
+      const peak = CHRONO_PEAK_HOUR[c];
+      let prev = 0;
+      for (let d = 0; d <= 7; d++) {
+        const pts = Math.abs(chronoPts(c, Math.min(23, peak + d)));
+        expect(pts).toBeGreaterThanOrEqual(prev - 1e-9);
+        expect(pts).toBeLessThanOrEqual(CHRONO_W + 1e-9);
+        prev = pts;
+      }
+    }
+  });
+
+  it("charges both chronotypes alike at equal misalignment — the asymmetry is dropped", () => {
+    const owlOff = Math.abs(chronoPts("owl", CHRONO_PEAK_HOUR.owl - 5));
+    const larkOff = Math.abs(chronoPts("lark", CHRONO_PEAK_HOUR.lark + 5));
+    expect(owlOff).toBeCloseTo(larkOff, 10);
+  });
+
+  it("still charges an owl more for an early sitting than a late one, and a lark the reverse", () => {
+    expect(Math.abs(chronoPts("owl", 8))).toBeGreaterThan(Math.abs(chronoPts("owl", 17)));
+    expect(Math.abs(chronoPts("lark", 19))).toBeGreaterThan(Math.abs(chronoPts("lark", 10)));
+  });
+
+  it("matches the tanh formula exactly at a hand-checked hour", () => {
+    const off = 8 - CHRONO_PEAK_HOUR.owl; // -8
+    expect(chronoPts("owl", 8)).toBeCloseTo(-CHRONO_W * Math.tanh(Math.abs(off) / CHRONO_TAPER_H), 10);
   });
 });
 
