@@ -149,12 +149,30 @@ export function attendanceShave(attendancePct: number | null): number {
   return Math.min(Math.max(shortfall, 0), 1) * ATTEND_SHAVE_W;
 }
 
+/**
+ * Rounds the MAGNITUDE (plain Math.round, which ties toward +Infinity) and
+ * reapplies the sign, rather than rounding the signed value directly — see
+ * rest.ts's negRound2 for why: plain Math.round on a negative x.xx5 ties
+ * toward +Infinity, which rounds a CHARGE down (e.g. -0.375 -> -0.37,
+ * understating it) instead of to the nearest cent of magnitude. Also
+ * normalises -0 to 0 so an untriggered sum never fails a strict `toBe(0)`.
+ *
+ * Owned here rather than in signalread.ts because shapley.ts rounds its
+ * display cells with the SAME rule `adj` itself was rounded with — a residual
+ * reallocated against a different rounding convention would not close.
+ */
+export const round2 = (v: number): number => {
+  const r = Math.round(Math.abs(v) * 100) / 100;
+  if (r === 0) return 0;
+  return v < 0 ? -r : r;
+};
+
 /** Points charged per lost hour of recent-vs-baseline sleep (chronic short-sleep), capped at REST_CHRONIC_CAP. */
 export const REST_CHRONIC_W = 0.75;
 export const REST_CHRONIC_CAP = 1.5;
 /** Points charged per hour of bedtime irregularity beyond ±1h sd, capped at 0.5 (folded into the same tanh as the acute/chronic terms). */
 export const REST_REG_W = 0.5;
-/** Points charged per hour below 6.5h the night before an assessment (acute short-sleep), capped at REST_ACUTE_CAP. */
+/** Points charged per hour below SHORT_SLEEP_H the night before an assessment (acute short-sleep), capped at REST_ACUTE_CAP. */
 export const REST_ACUTE_W = 0.8;
 export const REST_ACUTE_CAP = 2;
 /** Nights of sleep data needed before the rest channel is allowed to price. */

@@ -23,6 +23,7 @@ import {
   SIGNAL_ADJ_CAP,
   SIGNAL_NOTE_FLOOR,
   attendanceShave,
+  round2,
 } from "./params";
 import { restRead } from "./rest";
 import { encodingChargedNights, studyStock } from "./stock";
@@ -112,19 +113,6 @@ export interface NextSitting {
   weight: number | null;
 }
 
-/**
- * Rounds the MAGNITUDE (plain Math.round, which ties toward +Infinity) and
- * reapplies the sign, rather than rounding the signed value directly — see
- * rest.ts's negRound2 for why: plain Math.round on a negative x.xx5 ties
- * toward +Infinity, which rounds a CHARGE down (e.g. -0.375 -> -0.37,
- * understating it) instead of to the nearest cent of magnitude. Also
- * normalises -0 to 0 so an untriggered sum never fails a strict `toBe(0)`.
- */
-const round2 = (v: number): number => {
-  const r = Math.round(Math.abs(v) * 100) / 100;
-  if (r === 0) return 0;
-  return v < 0 ? -r : r;
-};
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 /** "+x.x" for non-negative, "-x.x" for negative — toFixed already carries the sign for negatives. */
 const signed1 = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}`;
