@@ -25,6 +25,17 @@ import {
  * count it. (The absolute deficit is still worth SHOWING the user — mean14
  * is exposed on the read for display/VOI — it is simply never priced.)
  *
+ * M5 (audit Part I §4): the chronic term is also DISJOINT from stock.ts's
+ * encoding penalty. A night that already docked a study session through
+ * ENCODING_PENALTY is dropped from the recent window before the baseline
+ * comparison (`chronicMean14`, not `mean14`), so a student who studies every
+ * day they sleep badly is charged once — mechanistically, inside k14 — and a
+ * student whose sleep slipped on nights they were NOT studying is charged
+ * once, as a baseline shift. Neither is charged twice. The caller supplies the
+ * charged set; `encodingChargedNights` in stock.ts computes it from the whole
+ * book's sessions, since rest is person-level and the penalty fires on any
+ * subject's session the morning after.
+ *
  * Two conventions this file owns and must not silently redefine elsewhere:
  *
  * 1. Bedtime midnight unwrap (regSd): a "HH:MM" clock time read literally
@@ -54,6 +65,13 @@ import {
 export interface RestRead {
   /** Mean hours over nights in (asOf-14, asOf]; null when < REST_MIN_NIGHTS such nights. */
   mean14: number | null;
+  /**
+   * Recent-window mean over nights NOT already charged through stock.ts's
+   * ENCODING_PENALTY; null when fewer than REST_MIN_NIGHTS survive. This, not
+   * `mean14`, is what `chronicTerm` prices against (M5) — `mean14` stays
+   * unfiltered because the absolute deficit is still worth SHOWING.
+   */
+  chronicMean14: number | null;
   /** Mean hours over nights in (asOf-56, asOf-14] — the baseline; null when < 2·REST_MIN_NIGHTS such nights. */
   mean56: number | null;
   /** Stdev of unwrapped bedtime minutes over nights in (asOf-56, asOf] with bedtime set; null when < REST_MIN_NIGHTS such nights. */
@@ -115,6 +133,7 @@ function populationStdev(values: number[]): number {
 
 const IDENTITY: RestRead = {
   mean14: null,
+  chronicMean14: null,
   mean56: null,
   regSd: null,
   chronicTerm: 0,
@@ -123,7 +142,12 @@ const IDENTITY: RestRead = {
   nights: 0,
 };
 
-export function restRead(rest: RestLog[], examDate: string | null, asOf: string): RestRead {
+export function restRead(
+  rest: RestLog[],
+  examDate: string | null,
+  asOf: string,
+  encodingCharged?: ReadonlySet<string>,
+): RestRead {
   const live = rest.filter((r) => r.date <= asOf);
   if (!live.length) return IDENTITY;
 
@@ -138,10 +162,25 @@ export function restRead(rest: RestLog[], examDate: string | null, asOf: string)
   const mean56 =
     baseline.length >= REST_BASELINE_MIN_NIGHTS ? baseline.reduce((a, r) => a + r.hours, 0) / baseline.length : null;
 
+  // M5: nights already docked mechanistically (a short night followed by a
+  // study day, charged through stock.ts's ENCODING_PENALTY) are excluded from
+  // the recent-window mean BEFORE it is compared against the baseline. The two
+  // terms measure genuinely different things — one a specific badly-encoded
+  // session, the other a sustained baseline shift — so they are made disjoint
+  // rather than either being deleted.
+  const chronicRecent = encodingCharged ? recent.filter((r) => !encodingCharged.has(r.date)) : recent;
+  const chronicMean14 =
+    chronicRecent.length >= REST_MIN_NIGHTS
+      ? chronicRecent.reduce((a, r) => a + r.hours, 0) / chronicRecent.length
+      : null;
+
   const chronicTerm =
-    mean14 != null && mean56 != null
+    chronicMean14 != null && mean56 != null
       ? negRound2(
-          Math.min(REST_CHRONIC_W * clamp(mean56 - mean14, 0, REST_CHRONIC_MAX_LOSS_H), REST_CHRONIC_CAP),
+          Math.min(
+            REST_CHRONIC_W * clamp(mean56 - chronicMean14, 0, REST_CHRONIC_MAX_LOSS_H),
+            REST_CHRONIC_CAP,
+          ),
         )
       : 0;
 
@@ -166,6 +205,7 @@ export function restRead(rest: RestLog[], examDate: string | null, asOf: string)
 
   return {
     mean14: mean14 == null ? null : round1(mean14),
+    chronicMean14: chronicMean14 == null ? null : round1(chronicMean14),
     mean56: mean56 == null ? null : round1(mean56),
     regSd: regSd == null ? null : round1(regSd),
     chronicTerm,

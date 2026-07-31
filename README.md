@@ -1487,6 +1487,14 @@ exactly one definition of a short night. It used to have two — the acute term 
 thresholds was visible in `params.ts`. An absolute sleep level is never priced, only these three
 deviations — see the caveat below on why.
 
+The chronic term is also **disjoint from the encoding penalty**. A night under `SHORT_SLEEP_H` that
+was followed by a logged study session has already docked that session inside $k_{14}$, so it is
+dropped from the recent window before the baseline comparison — the chronic term prices
+$\overline{h}_{56} - \overline{h}_{14}^{\,\text{uncharged}}$, not $\overline{h}_{56} -
+\overline{h}_{14}$. A short night is therefore charged **once**: mechanistically against the session
+it degraded, or as a sustained baseline shift, never both. `mean14` itself stays unfiltered, because
+the absolute deficit is still worth showing even where it is not priced.
+
 **Disruption** (`disrupt.ts`) — a decaying shock, not a flat deduction, only priced against a live
 sitting to recover against:
 

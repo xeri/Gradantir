@@ -64,6 +64,30 @@ const decayWindowWeight = (H: number): number => {
 
 const IDENTITY: StockRead = { k14: 0, baseline: null, term: 0, recallRatio: null, hoursPerWeek: null };
 
+/**
+ * M5 (audit Part I §4). The nights this module's ENCODING_PENALTY actually
+ * docked: a night under SHORT_SLEEP_H that was followed, the next day, by at
+ * least one logged study session. `rest.ts`'s chronic term excludes these from
+ * its recent-window mean, so a single bad night is charged ONCE —
+ * mechanistically, against the specific session it degraded — rather than
+ * twice, once here inside k14 and again as a baseline shift.
+ *
+ * Takes the WHOLE book's sessions, not one desk's: the penalty fires on any
+ * subject's session the morning after, while `rest` is person-level.
+ *
+ * Returns rest-row DATES. Per RestLog's own convention the night dated D ends
+ * on the morning of D+1, so the night that impaired study-day D is dated D−1 —
+ * the same lookup `studyStock` below and `rest.ts`'s acuteTerm both use.
+ */
+export function encodingChargedNights(sessions: StudySession[], rest: RestLog[]): ReadonlySet<string> {
+  const studyDays = new Set(sessions.map((s) => s.date));
+  const out = new Set<string>();
+  for (const r of rest) {
+    if (r.hours < SHORT_SLEEP_H && studyDays.has(addDays(r.date, 1))) out.add(r.date);
+  }
+  return out;
+}
+
 export function studyStock(
   sessions: StudySession[],
   rest: RestLog[],

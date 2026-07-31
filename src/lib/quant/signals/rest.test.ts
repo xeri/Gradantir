@@ -43,6 +43,7 @@ describe("restRead — identity on empty input", () => {
     const out = restRead([], null, ASOF);
     expect(out).toEqual({
       mean14: null,
+      chronicMean14: null,
       mean56: null,
       regSd: null,
       chronicTerm: 0,
@@ -56,6 +57,7 @@ describe("restRead — identity on empty input", () => {
     const out = restRead([], addDays(ASOF, 1), ASOF);
     expect(out).toEqual({
       mean14: null,
+      chronicMean14: null,
       mean56: null,
       regSd: null,
       chronicTerm: 0,
@@ -157,6 +159,59 @@ describe("restRead — bedtime regularity, with the midnight unwrap", () => {
     const out = restRead(rest, null, ASOF);
     expect(out.regSd).toBeNull();
     expect(out.regTerm).toBe(0);
+  });
+});
+
+describe("M5 — the chronic term skips nights the encoding penalty already charged", () => {
+  // 7 recent nights at `recent`, 14 baseline nights at `base`: enough to clear
+  // REST_MIN_NIGHTS on the recent window and 2×REST_MIN_NIGHTS on the baseline.
+  const book = (recent: number, base: number): RestLog[] => [
+    ...baselineNights(14, base),
+    ...recentNights(7, recent),
+  ];
+
+  it("is unchanged when no night was mechanistically charged", () => {
+    const rest = book(6, 8);
+    const bare = restRead(rest, null, ASOF);
+    const withEmpty = restRead(rest, null, ASOF, new Set<string>());
+    expect(bare.chronicTerm).toBeLessThan(0);
+    expect(withEmpty.chronicTerm).toBe(bare.chronicTerm);
+    expect(withEmpty.chronicMean14).toBe(bare.chronicMean14);
+  });
+
+  it("goes silent when every deteriorated night was already charged through the encoding penalty", () => {
+    const rest = book(6, 8);
+    const charged = new Set(recentNights(7, 6).map((r) => r.date));
+    const out = restRead(rest, null, ASOF, charged);
+    // Nothing left in the recent window to measure a baseline shift against, so
+    // the deterioration is charged ONCE — mechanistically, inside k14.
+    expect(out.chronicMean14).toBeNull();
+    expect(out.chronicTerm).toBe(0);
+    // The DISPLAY mean is untouched: the student is still shown the real
+    // absolute deficit, it is simply never priced twice.
+    expect(out.mean14).toBe(6);
+  });
+
+  it("still charges the student whose sleep slipped on nights they did not study", () => {
+    // Twelve short recent nights, four of them followed by a study day. Eight
+    // survive the exclusion — still over REST_MIN_NIGHTS — so the baseline
+    // shift is measurable on the nights no mechanistic charge has touched.
+    const recent = recentNights(12, 6);
+    const wide = [...baselineNights(14, 8), ...recent];
+    const charged = new Set(recent.filter((_, i) => i % 3 === 0).map((r) => r.date));
+    expect(charged.size).toBe(4);
+    const out = restRead(wide, null, ASOF, charged);
+    expect(out.chronicMean14).toBe(6);
+    expect(out.chronicTerm).toBeLessThan(0);
+  });
+
+  it("leaves the acute and regularity terms alone — they price different evidence", () => {
+    const rest = book(6, 8);
+    const charged = new Set(recentNights(7, 6).map((r) => r.date));
+    const out = restRead(rest, null, ASOF, charged);
+    expect(out.regTerm).toBe(0); // no bedtimes logged in this fixture
+    expect(out.acuteTerm).toBe(0); // no examDate
+    expect(out.nights).toBe(21);
   });
 });
 

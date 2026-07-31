@@ -26,7 +26,7 @@ import {
   attendanceShave,
 } from "./params";
 import { restRead } from "./rest";
-import { studyStock } from "./stock";
+import { encodingChargedNights, studyStock } from "./stock";
 import { timeErrorShareOf, traitSdMult } from "./traits";
 
 /**
@@ -172,7 +172,16 @@ export function signalRead(
 
   // REST — deterioration-only self-report; see rest.ts's own doctrine note.
   if (!dropped("rest")) {
-    const r = restRead(book.rest, next?.date ?? null, asOf);
+    // M5: the chronic term must not re-charge a night the encoding penalty has
+    // already docked. The charged set is built from the WHOLE book's sessions,
+    // not this desk's — the penalty fires on any subject's session the morning
+    // after a short night, while `book.rest` is person-level.
+    const r = restRead(
+      book.rest,
+      next?.date ?? null,
+      asOf,
+      encodingChargedNights(book.sessions, book.rest),
+    );
     const pts = r.chronicTerm + r.regTerm + r.acuteTerm;
     raw.rest = {
       pts,

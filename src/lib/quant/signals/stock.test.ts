@@ -5,7 +5,7 @@ import {
   ENCODING_PENALTY, QUALITY, SHORT_SLEEP_H, SPACING_RECENT, SPACING_SAME_DAY, SPACING_STALE,
   STOCK_W, halfLifeOf,
 } from "./params";
-import { studyStock } from "./stock";
+import { encodingChargedNights, studyStock } from "./stock";
 
 /**
  * studyStock — the effective-study-stock read (D5's "hours logged" channel).
@@ -38,6 +38,42 @@ describe("studyStock — identity on empty input", () => {
   it("returns the zero/null identity when there are no sessions", () => {
     const out = studyStock([], [], null, ASOF);
     expect(out).toEqual({ k14: 0, baseline: null, term: 0, recallRatio: null, hoursPerWeek: null });
+  });
+});
+
+describe("M5 — encodingChargedNights reports exactly the nights the penalty docked", () => {
+  it("names a short night followed by a logged session", () => {
+    const rest = [R("2026-05-01", SHORT_SLEEP_H - 1)];
+    const sessions = [S({ id: "s1", date: "2026-05-02" })];
+    expect([...encodingChargedNights(sessions, rest)]).toEqual(["2026-05-01"]);
+  });
+
+  it("ignores a short night nobody studied after", () => {
+    const rest = [R("2026-05-01", SHORT_SLEEP_H - 1)];
+    expect(encodingChargedNights([], rest).size).toBe(0);
+  });
+
+  it("ignores a full night followed by a session", () => {
+    const rest = [R("2026-05-01", SHORT_SLEEP_H)];
+    const sessions = [S({ id: "s1", date: "2026-05-02" })];
+    expect(encodingChargedNights(sessions, rest).size).toBe(0);
+  });
+
+  it("counts a night studied after by ANY subject — rest is person-level", () => {
+    const rest = [R("2026-05-01", SHORT_SLEEP_H - 1)];
+    const sessions = [S({ id: "s1", subjectId: "some-other-desk", date: "2026-05-02", kind: "class" })];
+    expect(encodingChargedNights(sessions, rest).size).toBe(1);
+  });
+
+  it("agrees with the penalty studyStock actually applied", () => {
+    // The set must name the night iff k14 was docked for it, which is the whole
+    // point: rest.ts excludes exactly the nights already charged in here.
+    const rest = [R(addDays(ASOF, -1), SHORT_SLEEP_H - 1)];
+    const sessions = [S({ id: "s1", date: ASOF, minutes: 60, kind: "reading" })];
+    const docked = studyStock(sessions, rest, null, ASOF);
+    const undocked = studyStock(sessions, [], null, ASOF);
+    expect(docked.k14).toBeCloseTo(round1(undocked.k14 * ENCODING_PENALTY), 5);
+    expect([...encodingChargedNights(sessions, rest)]).toEqual([addDays(ASOF, -1)]);
   });
 });
 
