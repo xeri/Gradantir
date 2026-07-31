@@ -29,6 +29,7 @@ import type { SelfWeightModel } from "../quant/pool";
 import type { AiWeightModel } from "../quant/aipool";
 import type { ReadinessSkill } from "../quant/readiness";
 import type { MasteryRead } from "../quant/signals/mastery";
+import type { SignalTermKey } from "../quant/signals/signalread";
 import type { StockRead } from "../quant/signals/stock";
 import type { AggregateForecast } from "../../types";
 
@@ -84,7 +85,7 @@ export interface ScorecardFacts {
   /**
    * The life-signals board's own per-desk reads (T19), keyed by subject id —
    * exactly the `studyStock`/`topicMastery`+`masteryRead` calls the SIGNALS
-   * view already makes for `MasteryPanel` and the per-term marginal table,
+   * view already makes for `MasteryPanel` and the per-term Shapley table,
    * handed down rather than run a second time so `signal.stock`/
    * `signal.mastery` quote the identical numbers on screen. `signalModelMean`
    * is the pre-signal house mean `masteryRead` compared its own call against
@@ -95,14 +96,14 @@ export interface ScorecardFacts {
   signalMastery?: Record<string, MasteryRead> | null;
   signalModelMean?: Record<string, number | null> | null;
   /**
-   * Per-desk MARGINAL contribution of the stock/mastery terms to `adj` —
-   * `adj(full) - adj(drop that term)`, exactly what the per-desk table's own
-   * STOCK/MASTERY columns show (never the raw channel read those columns
-   * used to be mismatched against). Computed once by the SIGNALS view's own
-   * `{drop}` ablation (never re-run here) and handed down so `signal.stock`/
-   * `signal.mastery` can report the SAME figure when opened from that cell.
+   * Per-desk SHAPLEY value of each term's contribution to `adj` — computed
+   * once by the SIGNALS view (audit Part I §3) and handed down so
+   * `signal.stock`/`signal.mastery` report the SAME figure the STOCK/MASTERY
+   * columns show when opened from that cell. Already display-rounded, so the
+   * values sum to `adj` exactly. A key absent from a desk's record means the
+   * channel fired nothing at all, which is a genuine zero.
    */
-  signalMarginal?: Record<string, { stock?: number; mastery?: number }> | null;
+  signalShapley?: Record<string, Partial<Record<SignalTermKey, number>>> | null;
 }
 
 /** D2 · what the chart board drew, for the figure under the cursor. */

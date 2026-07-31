@@ -7,13 +7,15 @@ import { LogPanels } from "./LogPanels";
 import { MasteryPanel, type SubjectMasteryRead } from "./MasteryPanel";
 import { TraitsEditor, type SubjectTraitsPatch } from "./TraitsEditor";
 import { VoiPanel } from "./VoiPanel";
-import { signalRead, type NextSitting, type SignalBook, type SignalRead, type SignalTermKey } from "../../lib/quant/signals/signalread";
+import { type SignalBook, type SignalRead, type SignalTermKey } from "../../lib/quant/signals/signalread";
+import { shapleyOf } from "../../lib/quant/signals/shapley";
+import { SIGNAL_ADJ_CAP } from "../../lib/quant/signals/params";
 import { topicMastery, masteryRead, type MasteryRead } from "../../lib/quant/signals/mastery";
 import { studyStock, type StockRead } from "../../lib/quant/signals/stock";
 import type { SignalSkill } from "../../lib/quant/signals/signalskill";
 import type { VoiItem } from "../../lib/quant/signals/voi";
 import type { DeriveCtx } from "../../lib/derive";
-import type { DisruptionKind, GradeEntry, Profile, SessionKind, SubjectStat, Upcoming } from "../../types";
+import type { DisruptionKind, GradeEntry, Profile, SessionKind, SubjectStat } from "../../types";
 
 /**
  * D5 · THE SIGNALS BOARD — the life-signals channel (§D5), on its own floor.
@@ -30,21 +32,28 @@ import type { DisruptionKind, GradeEntry, Profile, SessionKind, SubjectStat, Upc
  * earned weight — the same "say the cost before the instrument is touched"
  * discipline the Scorecard's three elicitation cards hold. Below it, one row
  * per live desk with one column per term: NOT the term's raw point read, but
- * its MARGINAL contribution — adj(full) minus adj(with that term dropped),
- * via the `{drop}` ablation seam `signalRead` exposes for exactly this. On a
- * book whose sum of terms never hits `SIGNAL_ADJ_CAP`, the two are numerically
- * identical (dropping one term of an unclamped sum just subtracts it); they
- * diverge only once the clamp is live, which is when "the raw read" would
- * have quietly stopped adding up to `ADJ` in the first place.
+ * its SHAPLEY VALUE in the clamped game `shapley.ts` decomposes (audit Part I
+ * §3) — the share of `ADJ` attributable to that channel, averaged over every
+ * order the channels could have arrived in. The columns sum to `ADJ` exactly,
+ * clamp binding or not.
+ *
+ * That replaced a drop-one marginal, adj(full) − adj(with that term dropped),
+ * which could not: with two terms at +3 against a ±4 cap each marginal read
+ * +1 and the row summed to +2 beside an `ADJ` of +4 — and this footer plus a
+ * whole README §30 section existed to excuse it. Unclamped the two readings
+ * coincide exactly, which is why the old column was defensible on most books
+ * and wrong on precisely the ones where the layer had the most to say.
+ *
+ * ONE read per desk, not eight: `SignalRead.rawTerms` carries the player list,
+ * so the game needs no ablation re-runs. `signalRead`'s `{drop}` seam stays
+ * where it is — VOI's real-ablation work (M9) is its remaining caller.
  *
  * The identity this shell defends is signalread.ts's own: the committed
  * fixture carries no signal data, so every desk's read collapses to adj 0,
- * terms [] — every marginal is 0, `ADJ` is 0.00, and `W·ADJ` (the earned
+ * terms [], rawTerms [] — every φ is 0, `ADJ` is 0.00, and `W·ADJ` (the earned
  * weight times that zero) is 0.00 too, whatever the prior weight itself
  * happens to be. Nothing here recomputes App's own board: `signalReads` is
- * the exact memo App.tsx already fitted (Task 12); only the per-term DROPPED
- * variants are computed fresh, right here, because they are the one thing
- * the board never had a reason to carry.
+ * the exact memo App.tsx already fitted (Task 12).
  *
  * T19 threads the derivation layer through: ADJ/W·ADJ, the STOCK and MASTERY
  * columns, and every VOI row carry a `<Derive>` trigger. `stockBySubject`
@@ -69,23 +78,6 @@ const ZERO_EPS = 0.005;
 const fmtPts = (v: number) => (Math.abs(v) < ZERO_EPS ? "0.00" : `${v > 0 ? "+" : ""}${v.toFixed(2)}`);
 const toneOf = (v: number) => (Math.abs(v) < ZERO_EPS ? C.faint : v < 0 ? C.down : C.up);
 
-/**
- * The soonest live exam sitting for a desk — mirrors `signalBoard`'s own
- * candidate resolution in signalread.ts exactly (filter to this subject's
- * future exams, soonest date then id wins). Duplicated rather than imported
- * because `signalBoard` does not expose it: the per-term ablation below has
- * to call `signalRead` directly (for the `{drop}` seam signalBoard has no
- * argument for), and needs the identical `next` a `signalBoard` call would
- * have resolved for the SAME baseline read this view reuses from App.tsx.
- */
-function soonestNext(subjectId: string, upcoming: Upcoming[], asOf: string): NextSitting | null {
-  const candidates = upcoming
-    .filter((u) => u.subjectId === subjectId && u.type === "Exam" && u.date >= asOf)
-    .sort((a, b) => (a.date !== b.date ? (a.date < b.date ? -1 : 1) : a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  const soonest = candidates[0] ?? null;
-  return soonest == null ? null : { date: soonest.date, hour: soonest.hour ?? null, weight: soonest.weight ?? null };
-}
-
 const IDENTITY_READ = (subjectId: string): SignalRead => ({ subjectId, adj: 0, rawSum: 0, sdMult: 1, terms: [], rawTerms: [], reasons: [] });
 /** Mirrors `mastery.ts`'s own (unexported) `MASTERY_IDENTITY` — the fallback
  *  for a live subject `masteryBySubject` has not (yet) keyed, which should
@@ -96,12 +88,12 @@ export interface SignalsProps {
   /** The visible board — ticker, colour and archived status per desk. */
   stats: SubjectStat[];
   entries: GradeEntry[];
-  upcoming: Upcoming[];
   signalBook: SignalBook;
   /** App's own board (Task 12) — the baseline read. Reused, never recomputed. */
   signalReads: Map<string, SignalRead>;
-  /** The exact desk means `signalReads` was fitted against — needed to call
-   *  `signalRead` again, honestly, for each per-term dropped variant. */
+  /** The exact desk means `signalReads` was fitted against — what
+   *  `masteryBySubject` compares the book's own whole-paper call to, and what
+   *  `signal.mastery`'s derivation quotes as the house's side. */
   modelMeans: Map<string, number | null>;
   signalFit: SignalSkill;
   signalOn: boolean;
@@ -134,7 +126,7 @@ export interface SignalsProps {
 }
 
 export function Signals({
-  stats, entries, upcoming, signalBook, signalReads, modelMeans, signalFit, signalOn, todayIso, voi,
+  stats, entries, signalBook, signalReads, modelMeans, signalFit, signalOn, todayIso, voi,
   onSetSignalWeighting, onOpenSubject, onLogSession, onLogRest, onLogDisruption,
   onAddTopic, onEditTopic, profile, onSaveTraits, onSaveProfile, deriveCtx,
 }: SignalsProps) {
@@ -145,21 +137,17 @@ export function Signals({
   const rows = useMemo(() => {
     const live = stats.filter((s) => !s.sub.archived);
     return live.map((s) => {
-      const sub = s.sub;
-      const full = signalReads.get(sub.id) ?? IDENTITY_READ(sub.id);
-      const subEntries = entries.filter((e) => e.subjectId === sub.id);
-      const next = soonestNext(sub.id, upcoming, todayIso);
-      const modelMean = modelMeans.get(sub.id) ?? null;
-      const marginals = new Map<SignalTermKey, number>(
-        TERM_COLS.map(({ key }) => {
-          const dropped = signalRead(sub, signalBook, subEntries, next, modelMean, todayIso, { drop: new Set([key]) });
-          return [key, full.adj - dropped.adj];
-        }),
-      );
-      return { sub, stat: s, adj: full.adj, wAdj: signalFit.w * full.adj, marginals };
+      const full = signalReads.get(s.sub.id) ?? IDENTITY_READ(s.sub.id);
+      // ONE read, not eight. Each column is this term's SHAPLEY value in the
+      // clamped game over `rawTerms` — the share of `adj` attributable to it,
+      // averaged over every order the channels could have arrived in. The
+      // columns sum to ADJ exactly whether or not the clamp is binding, which
+      // the drop-one marginals this replaced could not do (shapley.ts's
+      // header carries the two-terms-at-+3 counterexample).
+      const shapley = shapleyOf(full.rawTerms, SIGNAL_ADJ_CAP);
+      return { sub: s.sub, stat: s, adj: full.adj, wAdj: signalFit.w * full.adj, shapley };
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stats, signalReads, entries, upcoming, modelMeans, signalBook, todayIso, signalFit.w]);
+  }, [stats, signalReads, signalFit.w]);
 
   /* MASTERY (T17) — computed HERE, once, and handed to `MasteryPanel` as a
      finished read: the panel itself never calls `topicMastery`/`masteryRead`,
@@ -200,12 +188,12 @@ export function Signals({
   /* The derivation context this floor hands every trigger — App's own board
      facts (Task 12/T19: signalReads/signalFit/voi) plus the SIGNALS board's
      own facts (T19), threaded via `ScorecardFacts` exactly like the
-     Scorecard's `cardFacts` (both are D5). `signalMarginal` is `rows`' own
-     per-term ablation (`{drop}`), reused rather than recomputed a second
-     time, so `signal.stock`/`signal.mastery` can report the SAME marginal
-     figure the STOCK/MASTERY columns themselves show when keyed
-     `"marginal"` — never the raw channel read, which is a different number
-     with a different formatter (see signals.ts's own `fmtMarginal`). */
+     Scorecard's `cardFacts` (both are D5). `signalShapley` is `rows`' own
+     decomposition, reused rather than recomputed a second time, so
+     `signal.stock`/`signal.mastery` can report the SAME share the
+     STOCK/MASTERY columns themselves show when keyed `"shapley"` — never the
+     raw channel read, which is a different number with a different formatter
+     (see signals.ts's own `fmtShare`). */
   const dctx = useMemo<DeriveCtx | undefined>(() => {
     if (!deriveCtx) return undefined;
     const masteryOf: Record<string, MasteryRead> = {};
@@ -214,10 +202,8 @@ export function Signals({
       masteryOf[sub.id] = masteryBySubject.get(sub.id)?.read ?? EMPTY_MASTERY;
       modelMeanOf[sub.id] = modelMeans.get(sub.id) ?? null;
     }
-    const marginalOf: Record<string, { stock?: number; mastery?: number }> = {};
-    for (const r of rows) {
-      marginalOf[r.sub.id] = { stock: r.marginals.get("stock"), mastery: r.marginals.get("mastery") };
-    }
+    const shapleyOfDesk: Record<string, Partial<Record<SignalTermKey, number>>> = {};
+    for (const r of rows) shapleyOfDesk[r.sub.id] = Object.fromEntries(r.shapley);
     return {
       ...deriveCtx,
       signalReads,
@@ -228,7 +214,7 @@ export function Signals({
         signalStock: stockBySubject,
         signalMastery: masteryOf,
         signalModelMean: modelMeanOf,
-        signalMarginal: marginalOf,
+        signalShapley: shapleyOfDesk,
       },
     };
   }, [deriveCtx, liveSubs, masteryBySubject, modelMeans, signalReads, signalFit, voi, stockBySubject, rows]);
@@ -295,13 +281,13 @@ export function Signals({
                       </span>
                     </td>
                     {TERM_COLS.map((c) => {
-                      const v = r.marginals.get(c.key) ?? 0;
+                      const v = r.shapley.get(c.key) ?? 0;
                       const cell = Math.abs(v) < ZERO_EPS ? "—" : fmtPts(v);
                       const derivedId = c.key === "stock" ? "signal.stock" : c.key === "mastery" ? "signal.mastery" : null;
                       return (
                         <td key={c.key} className="px-2.5 py-2 text-right text-xs tabular-nums" style={{ fontFamily: FONT.mono, color: toneOf(v) }}>
                           {derivedId && dctx ? (
-                            <Derive id={derivedId} ctx={{ ...dctx, stat: r.stat, key: "marginal" }} passive>{cell}</Derive>
+                            <Derive id={derivedId} ctx={{ ...dctx, stat: r.stat, key: "shapley" }} passive>{cell}</Derive>
                           ) : (
                             cell
                           )}
@@ -329,10 +315,10 @@ export function Signals({
           </div>
         )}
         <p className="px-3 py-2 border-t text-[10px] tracking-wider leading-relaxed" style={{ borderColor: C.line, color: C.faint, fontFamily: FONT.mono }}>
-          EACH TERM COLUMN IS ITS MARGINAL CONTRIBUTION IN POINTS — ADJ(FULL) MINUS ADJ(WITH THAT TERM DROPPED), NOT ITS
-          RAW READ, SO IT STAYS TRUE TO WHAT ACTUALLY MOVED THE CLAMPED SHIFT. WHERE TWO OR MORE TERMS JOINTLY HIT THE
-          CAP, THE MARGINALS NO LONGER SUM TO ADJ — EACH ONE IS STILL HONEST ON ITS OWN. ADJ = THE DESK'S OWN CLAMPED
-          SHIFT. W·ADJ = WHAT ACTUALLY MOVES THE NEXT-EXAM MEAN ONCE THE EARNED WEIGHT ABOVE IS APPLIED.
+          EACH TERM COLUMN IS ITS SHAPLEY VALUE IN POINTS — THIS DESK'S CLAMPED SHIFT SPLIT ACROSS THE CHANNELS THAT
+          CAUSED IT, AVERAGED OVER EVERY ORDER THEY COULD HAVE ARRIVED IN. THE COLUMNS SUM TO ADJ EXACTLY, WHETHER OR
+          NOT THE ±{SIGNAL_ADJ_CAP}PT CAP IS BINDING. ADJ = THE DESK'S OWN CLAMPED SHIFT. W·ADJ = WHAT ACTUALLY MOVES
+          THE NEXT-EXAM MEAN ONCE THE EARNED WEIGHT ABOVE IS APPLIED.
         </p>
       </Panel>
 

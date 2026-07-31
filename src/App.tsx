@@ -1016,7 +1016,6 @@ export default function App() {
               <Signals
                 stats={visible}
                 entries={data.entries}
-                upcoming={data.upcoming ?? []}
                 signalBook={signalBook}
                 signalReads={signalReads}
                 modelMeans={modelMeans}

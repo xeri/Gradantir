@@ -41,7 +41,6 @@ function render(signalOn = true) {
     <Signals
       stats={stats}
       entries={base.entries}
-      upcoming={base.upcoming ?? []}
       signalBook={signalBook}
       signalReads={signalReads}
       modelMeans={modelMeans}
