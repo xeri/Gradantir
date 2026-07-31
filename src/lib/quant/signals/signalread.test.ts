@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { Disruption, GradeEntry, RestLog, Subject, SubjectTraits, StudySession, Topic, TopicMark, Upcoming } from "../../../types";
 import { addDays } from "../../utils";
@@ -187,7 +189,7 @@ describe("signalRead — anxiety", () => {
     const entries = [E({ type: "Exam", worthPct: 20 })];
     const out = signalRead(SUB(), book(5), entries, { date: addDays(ASOF, 3), hour: null, weight: 40 }, null, ASOF);
     expect(out.adj).toBeCloseTo(-ANX_W, 5);
-    expect(out.terms).toEqual([{ key: "anxiety", pts: -ANX_W, note: `ANXIETY ${(-ANX_W).toFixed(1)} · HEAVY PAPER` }]);
+    expect(out.terms).toEqual([{ key: "anxiety", pts: -ANX_W, note: `ANXIETY ${(-ANX_W).toFixed(1)} · HIGH STAKES` }]);
   });
 
   it("weight equal to typical -> 0", () => {
@@ -208,6 +210,33 @@ describe("signalRead — anxiety", () => {
     const out = signalRead(SUB(), book(3), entries, { date: addDays(ASOF, 3), hour: null, weight: 90 }, null, ASOF);
     expect(out.adj).toBe(0);
     expect(out.terms).toEqual([]);
+  });
+});
+
+describe("M7 — the anxiety term is named for what it computes", () => {
+  it("prints a stakes note, not an arousal one", () => {
+    const book: SignalBook = { ...emptySignalBook, profile: { testAnxiety: 5, chronotype: null } };
+    const entries = [E({ type: "Exam", worthPct: 20 })];
+    const out = signalRead(SUB(), book, entries, { date: addDays(ASOF, 3), hour: null, weight: 40 }, null, ASOF);
+    const anx = out.terms.find((t) => t.key === "anxiety");
+    expect(anx, "expected the anxiety term to fire on a heavier-than-typical paper").toBeTruthy();
+    expect(anx!.note).toContain("HIGH STAKES");
+    expect(anx!.note).not.toContain("HEAVY PAPER");
+  });
+
+  it("no longer attributes the term to Yerkes-Dodson anywhere in the priced path", () => {
+    for (const mod of ["params.ts", "signalread.ts"]) {
+      const src = readFileSync(fileURLToPath(new URL(`./${mod}`, import.meta.url)), "utf8");
+      // The real source must be named...
+      expect(src, `${mod} must name the term's actual source`).toMatch(/Eysenck/);
+      // ...and a surviving mention of Yerkes-Dodson must be an explicit DENIAL
+      // (which is worth keeping — a future reader needs to know the term was
+      // mislabelled), never an attribution.
+      for (const m of src.matchAll(/Yerkes/gi)) {
+        const before = src.slice(Math.max(0, (m.index ?? 0) - 60), m.index);
+        expect(before, `${mod}: Yerkes-Dodson is attributed rather than denied`).toMatch(/\bnot\b/i);
+      }
+    }
   });
 });
 

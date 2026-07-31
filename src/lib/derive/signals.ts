@@ -129,7 +129,7 @@ export function signalAdjust(ctx: DeriveCtx): Derivation | null {
       { text: `clamped within \u00b1${SIGNAL_ADJ_CAP} pts`, pass: Math.abs(read.adj) <= SIGNAL_ADJ_CAP },
       { text: `capped under ${Math.round(SIGNAL_CAP * 100)}%`, pass: fit.w <= SIGNAL_CAP },
     ],
-    refs: ["buhlmann1967"],
+    refs: ["buhlmann1967", "eysenck2007"],
     related: ["signal.stock", "signal.mastery", "signal.voi"],
     source: "src/lib/quant/signals/signalread.ts \u00b7 signalRead, apply.ts \u00b7 applyRead",
   };

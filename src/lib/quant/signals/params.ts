@@ -201,7 +201,21 @@ export const DISRUPT_TAU = 10;
 /** Points cap on the disruption charge. */
 export const DISRUPT_CAP = 2.5;
 
-/** Points weight on the high-arousal Yerkes-Dodson arm only — anxiety helping on an easy paper and hurting on an unusually heavy one is asymmetric, so only the "heavy paper, high arousal" side is priced. */
+/**
+ * Points weight on the anxiety term. M7 (audit Part I §4): this is the
+ * ATTENTIONAL-CONTROL / processing-efficiency account (Eysenck, Derakshan,
+ * Santos & Calvo 2007), not the arousal inverted-U the comment here used to
+ * claim. The term multiplies trait anxiety by relative STAKES — `worthPct` is
+ * a paper's share of the grade, not its cognitive load — and attentional
+ * control theory is exactly the account under which evaluative pressure, not
+ * arousal per se, consumes the working-memory resources a hard paper needs.
+ *
+ * One-sided on purpose: a heavier-than-typical paper charges a self-reported
+ * anxious student and an easier one never credits them, because worry impairs
+ * efficiency without a symmetric facilitation on the low-stakes side. An
+ * arousal account would have to credit that side; this term does not, which is
+ * the clearest sign it was never the arousal account in the first place.
+ */
 export const ANX_W = 1.5;
 /** Midpoint of the 1-5 test-anxiety self-rating: at or below it the term is silent. */
 export const ANX_MID = 3;

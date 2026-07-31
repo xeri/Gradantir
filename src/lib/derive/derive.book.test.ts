@@ -626,6 +626,15 @@ describe("the derivation layer on the real book", () => {
     }
   });
 
+  it("M7 — carries the attentional-control source the anxiety term actually derives from", () => {
+    // The signals layer's anxiety term multiplies trait anxiety by relative
+    // STAKES, which is attentional control theory, not the Yerkes-Dodson
+    // arousal inverted-U its comments used to claim.
+    expect(CITATIONS.eysenck2007).toBeTruthy();
+    expect(CITATIONS.eysenck2007.year).toBe(2007);
+    expect(CITATIONS.eysenck2007.authors).toMatch(/Eysenck/);
+  });
+
   it("is used: every citation in the bibliography is referenced by something", () => {
     const cited = new Set(built.flatMap((b) => b.d.refs ?? []));
     const orphans = Object.keys(CITATIONS).filter((k) => !cited.has(k as keyof typeof CITATIONS));

@@ -1506,10 +1506,15 @@ severity `illness`/`family` = 1.5, `event` = 0.75, `other` = 1.0, duration credi
 recovery time constant `DISRUPT_TAU` = 10 days, whole-channel cap `DISRUPT_CAP` = 2.5.
 
 **Anxiety and chronotype** (`signalread.ts`) — the smallest, most situational terms, each firing only
-near a live sitting. Anxiety prices only the high-arousal Yerkes-Dodson arm — a heavier-than-typical
-paper charges a self-reported anxious student, an easy one never credits them:
-$\text{pts} = -\text{ANX\_W}\cdot\max(0,\tfrac{\text{anx}-3}{2})\cdot\text{clamp}(\tfrac{\text{weight}}{\text{typicalWeight}}-1,\,0,\,1)$,
-`ANX_W` = 1.5. Chronotype prices sitting-time synchrony against a self-reported owl/lark as a
+near a live sitting. Anxiety prices trait anxiety against relative **stakes**, one-sided — a
+heavier-than-typical paper charges a self-reported anxious student, an easy one never credits them:
+$\text{pts} = -\text{ANX\_W}\cdot\max\big(0,\tfrac{\text{anx}-\text{ANX\_MID}}{\text{ANX\_SPAN}}\big)\cdot\text{clamp}(\tfrac{\text{weight}}{\text{typicalWeight}}-1,\,0,\,1)$,
+`ANX_W` = 1.5, `ANX_MID` = 3, `ANX_SPAN` = 2. This is **attentional control theory** (Eysenck et al.
+2007) — evaluative pressure consuming the working-memory resources a hard paper needs — and *not*
+the Yerkes–Dodson arousal inverted-U this section, the constant's comment and the code comment all
+used to claim. `worthPct` is a paper's share of the grade, not its cognitive load, and an arousal
+account would have to credit the low-stakes side, which this term deliberately does not. Chronotype
+prices sitting-time synchrony against a self-reported owl/lark as a
 **continuous** function of the sitting hour:
 
 $$

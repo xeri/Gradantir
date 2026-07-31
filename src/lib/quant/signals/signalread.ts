@@ -203,7 +203,12 @@ export function signalRead(
     };
   }
 
-  // ANXIETY — the high-arousal Yerkes-Dodson arm, heavy-paper side only.
+  // ANXIETY — trait anxiety against relative STAKES, one-sided. M7 (audit
+  // Part I §4): this is attentional control theory (Eysenck et al. 2007), NOT
+  // Yerkes-Dodson. `worthPct` is a paper's share of the grade, not its
+  // cognitive load, so what this prices is evaluative pressure consuming
+  // working-memory resources — not an arousal inverted-U, which would have to
+  // credit the low-stakes side and deliberately does not.
   const anx = book.profile?.testAnxiety ?? null;
   if (!dropped("anxiety") && anx != null && anx >= 1) {
     const typicalWeight = median(
@@ -213,7 +218,7 @@ export function signalRead(
       next?.weight != null && typicalWeight != null && typicalWeight > 0
         ? -ANX_W * Math.max(0, (anx - ANX_MID) / ANX_SPAN) * clamp(next.weight / typicalWeight - 1, 0, 1)
         : 0;
-    raw.anxiety = { pts, note: () => `ANXIETY ${signed1(pts)} · HEAVY PAPER` };
+    raw.anxiety = { pts, note: () => `ANXIETY ${signed1(pts)} · HIGH STAKES` };
   }
 
   // CHRONOTYPE — sitting-time synchrony vs the self-reported chronotype.

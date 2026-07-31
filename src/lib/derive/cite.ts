@@ -21,6 +21,13 @@ export interface Citation {
 }
 
 export const CITATIONS = {
+  eysenck2007: {
+    short: "Eysenck et al. (2007)",
+    authors: "Eysenck, M. W., Derakshan, N., Santos, R., Calvo, M. G.",
+    year: 2007,
+    title: "Anxiety and Cognitive Performance: Attentional Control Theory",
+    venue: "Emotion 7(2), 336–353",
+  },
   page1954: {
     short: "Page (1954)",
     authors: "Page, E. S.",
