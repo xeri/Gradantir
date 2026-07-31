@@ -294,13 +294,18 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [data?.upcoming, data?.entries, signalled, selfFit, aiFit],
   );
-  /* What the wire is moving in points right now — measured, for the card copy. */
+  /* What the wire is moving in points right now — measured, for the card copy.
+     B5 (audit Part I §4): measured against `signalled`, the board the student
+     is actually looking at and the board `poolBoardJoint` pools into two memos
+     above — never the pre-signals `stats`. Measuring the wire's move against a
+     board that is not on screen reports a displacement nobody can see, and
+     ignores every life-signals shift on the desk being moved. */
   const aiCharge = useMemo(
     () => (data && aiFit.w > 0
-      ? aiChargePts(stats, data.upcoming ?? [], data.entries, todayStr(), selfFit, aiFit)
+      ? aiChargePts(signalled, data.upcoming ?? [], data.entries, todayStr(), selfFit, aiFit)
       : { desks: 0, maxAbsMove: 0 }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data?.upcoming, data?.entries, stats, selfFit, aiFit],
+    [data?.upcoming, data?.entries, signalled, selfFit, aiFit],
   );
 
   const booked = useMemo(() => listedAsOf(pooled, todayStr(), cal), [pooled, cal]);
