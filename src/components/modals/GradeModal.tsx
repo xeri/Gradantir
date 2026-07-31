@@ -21,6 +21,7 @@ export function GradeModal({
   entry,
   defaultSubjectId,
   calendar = DEFAULT_CALENDAR,
+  topicMarkCount = 0,
   onSave,
   onClose,
 }: {
@@ -28,6 +29,11 @@ export function GradeModal({
   entry?: GradeEntry;
   defaultSubjectId?: string;
   calendar?: SchoolCalendar;
+  /** Topic marks currently filed against `entry` — moot for a new print,
+   *  live only while editing one (B2 review finding: re-filing a print
+   *  under a different desk breaks the dual FK `sanitizeTopicMark` checks,
+   *  so those marks are about to be dropped the moment SUBJECT is changed). */
+  topicMarkCount?: number;
   onSave: (e: GradeEntry) => void;
   onClose: () => void;
 }) {
@@ -140,6 +146,12 @@ export function GradeModal({
             <select className={inputCls + " cursor-pointer font-semibold"} style={inputStyle} value={subjectId} onChange={(e) => setSubjectId(e.target.value)}>
               {subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
+            {entry != null && topicMarkCount > 0 && subjectId !== entry.subjectId && (
+              <p className="mt-1 text-[10px] uppercase tracking-wider leading-relaxed" style={{ color: C.down, fontFamily: FONT.mono }}>
+                CHANGING SUBJECT DROPS {topicMarkCount} TOPIC MARK{topicMarkCount === 1 ? "" : "S"} FILED AGAINST
+                THIS RESULT — ITS TOPICS STAY ON {subjects.find((s) => s.id === entry.subjectId)?.ticker ?? "THE ORIGINAL DESK"}.
+              </p>
+            )}
           </Field>
           <Field label="TYPE">
             <select className={inputCls + " cursor-pointer font-semibold"} style={inputStyle} value={type} onChange={(e) => setType(e.target.value as AssessmentType)}>

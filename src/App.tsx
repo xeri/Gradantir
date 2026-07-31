@@ -479,8 +479,23 @@ export default function App() {
 
   const addSubject = (sub: Subject) => { update({ subjects: [...subjects, sub] }); setModal(null); };
   const saveGrade = (entry: GradeEntry) => {
-    const exists = entries.some((e) => e.id === entry.id);
-    update({ entries: exists ? entries.map((e) => (e.id === entry.id ? entry : e)) : [...entries, entry] });
+    const prior = entries.find((e) => e.id === entry.id);
+    const exists = prior != null;
+    // B2 review finding: re-filing a print under a different desk is a
+    // plausible correction (the SUBJECT select is live on edit), but the
+    // entry keeps its id while its topic marks' dual FK (io.ts's
+    // sanitizeTopicMark) now disagrees on subject — so those marks would be
+    // dropped SILENTLY on the next load. Dropping them HERE, in the same
+    // write, is the honest version: the student sees it happen at the
+    // moment of the edit (GradeModal's own inline warning), not three days
+    // later with no explanation.
+    const subjectChanged = prior != null && prior.subjectId !== entry.subjectId;
+    update({
+      entries: exists ? entries.map((e) => (e.id === entry.id ? entry : e)) : [...entries, entry],
+      ...(subjectChanged
+        ? { topicMarks: (data.topicMarks ?? []).filter((m) => m.entryId !== entry.id) }
+        : {}),
+    });
     setModal(null);
   };
   const deleteEntry = (id: string) => update({ entries: entries.filter((e) => e.id !== id) });
@@ -646,6 +661,15 @@ export default function App() {
         .filter((s) => s.id !== sid)
         .map((s) => (s.formerly === sid ? { ...s, formerly: null } : s)),
       entries: entries.filter((e) => e.subjectId !== sid),
+      // B3 review finding: the dead desk's topics and sessions stayed in
+      // state after this cascade — surviving in the Data Ledger under an
+      // empty ticker, in an export taken before reload, and vanishing only
+      // on the NEXT load (io.ts's sanitizer cuts them then, same as it
+      // always would have). Same one-line-per-slice fix the entries filter
+      // already gets, applied at the moment of deletion rather than three
+      // days later.
+      topics: (data.topics ?? []).filter((t) => t.subjectId !== sid),
+      sessions: (data.sessions ?? []).filter((s) => s.subjectId !== sid),
     });
     setDrawerId(null);
   };
@@ -1055,6 +1079,7 @@ export default function App() {
             entry={modal.entry}
             defaultSubjectId={modal.subjectId}
             calendar={cal}
+            topicMarkCount={modal.entry ? (data.topicMarks ?? []).filter((m) => m.entryId === modal.entry!.id).length : 0}
             onSave={saveGrade}
             onClose={() => setModal(null)}
           />
