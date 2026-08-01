@@ -1560,12 +1560,14 @@ marker noise `TRAIT_MARKER_W` = 0.20 on $(1-\text{determinism})$, sampling noise
 "time" error, a flat +0.05 on a stated belief ≤ 2, all clamped to `TRAIT_SDMULT_CAP` = 1.4 — every
 component is $\ge 0$, so the multiplier can only widen a forecast, never move its centre.
 
-**The clamp, the credibility, and the shift.** Every candidate term sums, unclamped, to `rawSum`; the
-priced `adj` is $\text{clamp}(\text{rawSum},\,\pm\text{SIGNAL\_ADJ\_CAP})$, rounded to 2dp, with
-`SIGNAL_ADJ_CAP` = 4 — set near `EFFORT_ACTUAL_W`, the layer's closest sibling. The channel's weight
-is earned exactly like §27/§29's, on `signalskill.ts`'s own walk-forward replay (as-of each resolved
-exam round, with the state book filtered to what was logged strictly before that round's
-resolution):
+**The clamp, the credibility, and the shift.** Every candidate term — each already scaled by its own
+credibility multiplier $a_k$, see *Each channel earns its own credibility* below — sums, unclamped, to
+`rawSum`; the priced `adj` is $\text{clamp}(\text{rawSum},\,\pm\text{SIGNAL\_ADJ\_CAP})$, rounded to
+2dp, with `SIGNAL_ADJ_CAP` = 4 — set near `EFFORT_ACTUAL_W`, the layer's closest sibling. The layer's
+weight is earned exactly like §27/§29's, on `signalskill.ts`'s own walk-forward replay (as-of each
+resolved exam round, with the state book filtered to what was logged strictly before that round's
+resolution) — and on the **reshaped** `adj`, so the weight is earned by the same adjustment the board
+applies:
 
 $$
 w = \text{clamp}\!\left(\frac{n\cdot\text{rawShare} + \kappa\cdot\text{SIGNAL\_PRIOR}}{n+\kappa},\ 0,\ \text{SIGNAL\_CAP}\right), \qquad \kappa = \text{SIGNAL\_KAPPA} = 2,\ \text{SIGNAL\_CAP} = 0.35,\ \text{SIGNAL\_PRIOR} = 0.3.
@@ -1629,6 +1631,49 @@ and wrong on precisely the ones where the layer had the most to say.
 
 The **raw** term rows on `signal.adjust`'s own derivation card are a different question and still
 overshoot a bound cap — that card says so, on its clamp step, whenever the clamp actually binds.
+
+**Each channel earns its own credibility.** The seven terms above are authored with hand-set weights
+in `quant/signals/params.ts` — that is the *prior*, a claim about how much each mechanism is worth.
+It stays. What measurement adds is one multiplier per channel:
+
+$$
+\text{adj} = \operatorname{clip}_{\pm\text{CAP}}\!\Big(\sum_k a_k\,\pi_k\Big),\qquad
+a_k = \operatorname{clamp}\!\big(\operatorname{shrink}(\tilde a_k,\; n_k,\; 1,\; \kappa_{\text{ch}}),\;
+a_{\min},\, a_{\max}\big).
+$$
+
+$\hat a_k$ is fitted by coordinate descent over the same walk-forward CRPS the layer's own weight is
+scored on, one bracketed 1-D search per channel per sweep (`quant/fit.ts`: a grid over the whole
+bracket, then golden-section inside the interval that brackets its best point — the grid is the guard
+against a second basin). $n_k$ counts the scored rounds in which channel $k$ actually fired. A channel
+below `SIGNAL_CHANNEL_MIN_ROUNDS` firings is not fitted at all: $a_k = 1$ exactly, the authored prior,
+and the scoreboard reads `UNMEASURED`.
+
+**Only the product is identified.** $w \cdot a_k$ is a product, and one student's book cannot separate
+"the layer is half as big as it thinks" from "every channel is half as credible as it thinks". So the
+fit runs in a fixed order — *shape first, then scale* — and $\hat a_k$ is normalised to mean exactly 1
+over the measured channels before the layer's own weight $w$ is fitted on the reshaped $\text{adj}$.
+$a_k$ then carries only **relative** channel credibility and $w$ carries absolute size, which is both
+identified and directly readable: *MASTERY pulls 1.8× its stated weight, REST pulls 0.3×.*
+
+Three defences against seven parameters on the six-to-twelve resolved rounds a real book carries, all
+of them the house's existing discipline: shrinkage toward the authored prior with its own $\kappa$, a
+minimum round count before a channel is measured at all, and hard clamps on $a_k$. The mean-1 property
+is a statement about $\tilde a$, the normalised fit — the shipped $a_k$ are each pulled toward 1 at
+their own evidence rate, so seven different $n_k$ pull seven different distances, and the tests assert
+each property on the vector it is true of.
+
+The **CHANNEL CREDIBILITY** table on the SIGNALS floor prints all of it: `×EARNED`, the round count,
+and the CRPS the book would pay to drop the channel entirely. Because the multipliers fold in where
+`signalRead` assembles its candidates, the Shapley columns above decompose $a_k\pi_k$ — the
+contribution that actually ships — with no change to `shapley.ts`, which never learns a multiplier was
+applied.
+
+One honest limit, stated here rather than left to be found: **chronotype cannot be measured at all.**
+The walk-forward replay scores every round with no sitting hour, because a resolved sitting's hour is
+not recorded anywhere on the book, so the chronotype candidate never fires and its $n_k$ is
+structurally zero. It keeps its authored weight, the scoreboard says `UNMEASURED`, and the fix is a
+data-model change tracked as Part II §12.4 of the prediction-math audit.
 
 **The engine distinguishes "never set" from "set to a neutral default."** `mastery.ts`'s prereq gate
 fires only when a subject's `traits` object is non-null at all — a topic's ceiling is never compared
