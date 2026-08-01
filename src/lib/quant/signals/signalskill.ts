@@ -2,7 +2,11 @@ import { clamp } from "../../utils";
 import { earnedWeight, NO_WEIGHT, type EarnedWeight } from "../earned";
 import { scoreT } from "../eval/scoring";
 import { SIGNAL_CAP, SIGNAL_KAPPA, SIGNAL_PRIOR } from "../params";
-import { signalRead, type NextSitting, type SignalBook } from "./signalread";
+import { SIGNAL_ADJ_CAP } from "./params";
+import {
+  adjOf, signalRead,
+  type NextSitting, type SignalBook, type SignalChannelWeights, type SignalRawTerm,
+} from "./signalread";
 import type { ForecastLog, GradeEntry, Subject } from "../../../types";
 
 /**
@@ -31,6 +35,11 @@ import type { ForecastLog, GradeEntry, Subject } from "../../../types";
  * rule already does at zero evidence. That is what keeps the fixture byte-
  * identical through this channel. `enabled: false` is a different, harder
  * floor: `w = 0` exactly, mirroring how every other channel expresses "off".
+ *
+ * The replay and the scoring are two functions (audit Part I §2). `channels.ts`
+ * fits the SHAPE of the adjustment — one credibility multiplier per channel —
+ * on the same rounds this file scores the SCALE on, and the replay is done once
+ * and shared rather than run twice against two copies of the cutoff rules.
  */
 
 export interface SignalSkill extends EarnedWeight {
@@ -69,27 +78,50 @@ function bookBefore(book: SignalBook, entries: GradeEntry[], cutoff: string): Si
 }
 
 /**
- * Fit the weight the life-signals channel has earned, from every resolved
- * exam round in the register.
+ * One resolved round, replayed: the desk's per-channel candidate reads as of
+ * that round's resolution, beside the register's own stored call and score on
+ * the same outcome.
+ *
+ * `rawTerms` is UNWEIGHTED on purpose. The replay is the expensive half of
+ * this file (a book filter and a full `signalRead` per round) and it does not
+ * depend on the credibility multipliers at all, so it runs ONCE and both
+ * fitters — `channels.ts` searching over `a_k`, and `signalSkill` scoring the
+ * result — replay it arithmetically through `adjOf` rather than re-reading the
+ * book. A second copy of `bookBefore`'s cutoff discipline is exactly the kind
+ * of duplicate that drifts.
  */
-export function signalSkill(
+export interface SignalRound {
+  subjectId: string;
+  /** The round's resolution date — the as-of cutoff its read was taken at. */
+  cutoff: string;
+  /** The desk's per-channel candidate reads as of `cutoff`, UNWEIGHTED. */
+  rawTerms: SignalRawTerm[];
+  sdMult: number;
+  point: number;
+  sd: number;
+  df: number;
+  realized: number;
+  /** The register's own CRPS on this outcome — the model side of the ratio. */
+  modelCrps: number;
+}
+
+/**
+ * Replay every resolved exam round in the register through the life-signals
+ * book as it stood at that round's resolution.
+ */
+export function signalRounds(
   register: ForecastLog[],
   book: SignalBook,
   subjects: Subject[],
   entries: GradeEntry[],
-  enabled: boolean,
-): SignalSkill {
-  if (!enabled) return NO_SIGNAL_SKILL;
-
+): SignalRound[] {
   const subjectsById = new Map(subjects.map((s) => [s.id, s]));
   // crps must be present alongside realized for a resolved log (replayRegister
   // always sets both together) — required here so `log.crps as number` below
-  // is an honest cast rather than a silent `undefined` corrupting `model[]`.
+  // is an honest cast rather than a silent `undefined` corrupting the score.
   const resolved = register.filter((l) => l.target === "exam" && l.realized != null && l.crps != null);
 
-  const you: number[] = [];
-  const model: number[] = [];
-
+  const out: SignalRound[] = [];
   for (const log of resolved) {
     const cutoff = log.resolvedAt;
     if (cutoff == null) continue;
@@ -97,18 +129,72 @@ export function signalSkill(
     if (!sub) continue;
 
     const resolvedEntry = log.resolvedEntryId != null ? entries.find((e) => e.id === log.resolvedEntryId) ?? null : null;
+    // `hour: null` — Part II §12.4: a resolved sitting's hour is not recorded
+    // anywhere on the book (GradeEntry has no hour field), so the chronotype
+    // candidate cannot fire in the replay and its own record is structurally
+    // empty. channels.ts pins that fact in a test and the scoreboard prints it
+    // rather than letting the channel ride an unmeasured multiplier silently.
     const next: NextSitting = { date: cutoff, hour: null, weight: resolvedEntry?.worthPct ?? null };
 
     const entriesBefore = entries.filter((e) => e.subjectId === log.subjectId && e.date < cutoff);
     const read = signalRead(sub, bookBefore(book, entries, cutoff), entriesBefore, next, log.point, cutoff);
 
-    // No evidence logged as of this round's cutoff — not scored, not a tie.
-    if (read.adj === 0 && read.sdMult === 1) continue;
+    out.push({
+      subjectId: log.subjectId,
+      cutoff,
+      rawTerms: read.rawTerms,
+      sdMult: read.sdMult,
+      point: log.point,
+      sd: log.sd,
+      df: log.df,
+      realized: log.realized as number,
+      modelCrps: log.crps as number,
+    });
+  }
+  return out;
+}
 
-    const realized = log.realized as number;
-    const youT = { mean: clamp(log.point + read.adj, 0, 100), scale: log.sd * read.sdMult, df: log.df };
-    you.push(scoreT(youT, realized).crps);
-    model.push(log.crps as number);
+/**
+ * The adjusted forecast a round implies at a given weight vector — the SAME
+ * arithmetic `applySignals` ships, so the fit scores what the board sells.
+ */
+export function roundForecast(
+  round: SignalRound,
+  weights: SignalChannelWeights | null,
+): { adj: number; mean: number; scale: number; df: number } {
+  const terms = weights
+    ? round.rawTerms.map((t) => ({ key: t.key, pts: (weights[t.key] ?? 1) * t.pts })).filter((t) => t.pts !== 0)
+    : round.rawTerms;
+  const { adj } = adjOf(terms, SIGNAL_ADJ_CAP);
+  return { adj, mean: clamp(round.point + adj, 0, 100), scale: round.sd * round.sdMult, df: round.df };
+}
+
+/**
+ * Fit the weight the life-signals channel has earned, from every replayed
+ * round, at the channel credibility `channels.ts` has already fitted.
+ *
+ * A round the read cannot move at all (adj 0, sdMult 1 — the identity, no
+ * evidence logged as of that cutoff, or every channel measured down to
+ * nothing) is not a tie, it is not evidence, and is skipped rather than
+ * scored. That test runs at the SHIPPED weights, not the authored ones: a
+ * channel the record has zeroed genuinely contributes no evidence to the
+ * scale fit.
+ */
+export function signalSkill(
+  rounds: SignalRound[],
+  weights: SignalChannelWeights | null,
+  enabled: boolean,
+): SignalSkill {
+  if (!enabled) return NO_SIGNAL_SKILL;
+
+  const you: number[] = [];
+  const model: number[] = [];
+  for (const round of rounds) {
+    const fc = roundForecast(round, weights);
+    // No evidence logged as of this round's cutoff — not scored, not a tie.
+    if (fc.adj === 0 && round.sdMult === 1) continue;
+    you.push(scoreT({ mean: fc.mean, scale: fc.scale, df: fc.df }, round.realized).crps);
+    model.push(round.modelCrps);
   }
 
   const fit = earnedWeight(you, model, { kappa: SIGNAL_KAPPA, cap: SIGNAL_CAP, toward: SIGNAL_PRIOR });

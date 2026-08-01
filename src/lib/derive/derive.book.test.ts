@@ -26,7 +26,7 @@ import { makeWeightFn } from "../weights";
 import { emptySignalBook, signalBoard, type SignalTermKey } from "../quant/signals/signalread";
 import { shapleyOf } from "../quant/signals/shapley";
 import { SIGNAL_ADJ_CAP } from "../quant/signals/params";
-import { signalSkill } from "../quant/signals/signalskill";
+import { signalRounds, signalSkill } from "../quant/signals/signalskill";
 import { studyStock, type StockRead } from "../quant/signals/stock";
 import { topicMastery, masteryRead, type MasteryRead } from "../quant/signals/mastery";
 import { valueOfInformation } from "../quant/signals/voi";
@@ -171,7 +171,7 @@ const modelFor = (r: { upcoming: Upcoming }) => {
 const signalBook = emptySignalBook;
 const signalModelMeans = new Map(stats.map((s) => [s.sub.id, s.quant?.nextExam.mean ?? null]));
 const signalReads = signalBoard(subjects, signalBook, entries, upcoming, signalModelMeans, TODAY);
-const signalFit = signalSkill(register, signalBook, subjects, entries, true);
+const signalFit = signalSkill(signalRounds(register, signalBook, subjects, entries), null, true);
 const voiDesks = new Map(stats.map((s) => [s.sub.id, s.quant?.nextExam.sd ?? null]));
 const voi = valueOfInformation(active, signalBook, voiDesks, TODAY);
 const signalStockOf: Record<string, StockRead> = {};
