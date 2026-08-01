@@ -44,9 +44,24 @@ function pinball(y: number, q: number, tau: number): number {
   return (y - q) * (tau - (y < q ? 1 : 0));
 }
 
+/**
+ * CRPS alone, in score points — the closed form, without the quantile work
+ * `scoreT` does for coverage, pinball and the interval score. The same number
+ * `scoreT(t, y).crps` returns by construction, because `scoreT` calls this.
+ *
+ * It is separate because a FIT evaluates its objective thousands of times
+ * (channels.ts's coordinate descent runs one bracketed 1-D search per channel
+ * per sweep) while `scoreT` spends NINE `tQuantile` calls per score — each a
+ * 100-step bisection over a continued fraction — on quantities a minimiser
+ * never reads. CRPS itself needs one `tCdf` and one `tPdf`.
+ */
+export function crpsT(t: StudentT, y: number): number {
+  return t.scale * crpsStdT((y - t.mean) / t.scale, t.df);
+}
+
 export function scoreT(t: StudentT, y: number): Scores {
   const w = (y - t.mean) / t.scale;
-  const crps = t.scale * crpsStdT(w, t.df);
+  const crps = crpsT(t, y);
 
   const pb = {} as Record<Quantile, number>;
   for (const q of QUANTILES) {

@@ -351,6 +351,64 @@ export const SIGNAL_CAP = 0.35;
  */
 export const SIGNAL_PRIOR = 0.3;
 
+/**
+ * Pseudo-rounds shrinking each SIGNAL CHANNEL's own credibility multiplier
+ * toward 1 — "this channel pulls exactly the weight it was authored with"
+ * (audit Part I §2.2). Larger than SIGNAL_KAPPA because the layer's scarce
+ * resolved rounds are split SEVEN ways here: the channel-level record is
+ * always thinner than the layer-level one it is carved out of, so it is
+ * approached more slowly.
+ */
+export const SIGNAL_CHANNEL_KAPPA = 3;
+
+/**
+ * Rounds in which a channel must actually have FIRED before it is measured at
+ * all. Below this it is not fitted, not normalised and not scored — its
+ * multiplier is exactly 1, the hand-set prior, and the scoreboard says
+ * UNMEASURED rather than printing a number nobody should read. Four is the
+ * point at which a channel has a record rather than an anecdote on a book that
+ * typically carries 6-12 resolved rounds in total.
+ */
+export const SIGNAL_CHANNEL_MIN_ROUNDS = 4;
+
+/**
+ * Hard clamps on the credibility multiplier. A channel may be measured down to
+ * a quarter of its authored weight or up to two and a half times it; past that
+ * the fit is describing this book's noise rather than this channel's worth.
+ * Wide enough to admit the readings the layer is meant to surface ("MASTERY
+ * pulls 1.8x its stated weight, CHRONO pulls 0.3x"), narrow enough that seven
+ * multipliers fitted on a handful of rounds cannot rewrite the layer.
+ */
+export const SIGNAL_A_MIN = 0.25;
+export const SIGNAL_A_MAX = 2.5;
+
+/**
+ * Sweeps of the coordinate descent over the measured channels. Each sweep is a
+ * full 1-D search per channel holding the others fixed; three is where the
+ * objective stops moving on books of this size, and a fixed count (rather than
+ * "until converged") keeps the fit deterministic and its cost bounded.
+ */
+export const SIGNAL_CHANNEL_PASSES = 3;
+
+/**
+ * Improvement in mean CRPS, in score points, a channel's own search must beat
+ * to move it off the authored prior at all. Part II §12.6's rule met early: an
+ * objective that is flat in the parameter has no minimiser, and a search over
+ * a flat lands on an arbitrary point of it. Below this the channel keeps
+ * a_k = 1 and says so.
+ */
+export const SIGNAL_CHANNEL_TOL = 1e-4;
+
+/**
+ * Neutral band, in mean CRPS points, on the scoreboard's drop-one verdict. A
+ * channel whose removal moves the book's walk-forward score by less than this
+ * is reported NEUTRAL rather than credited or blamed for noise. A stated
+ * constant, not a fitted one — deriving the band from the fold-level spread is
+ * Part II §11.5's job for the whole ablation layer, and this row will move to
+ * it when that lands.
+ */
+export const SIGNAL_CHANNEL_EPS = 0.01;
+
 /* ── Market depth ──────────────────────────────────────────────────── */
 
 /**
