@@ -7,7 +7,10 @@ import { masteryRead, topicMastery } from "./mastery";
 import {
   ANX_W, CHRONO_PEAK_HOUR, CHRONO_TAPER_H, CHRONO_W, MASTERY_W, SIGNAL_ADJ_CAP, SIGNAL_NOTE_FLOOR, attendanceShave,
 } from "./params";
-import { SIGNAL_TERM_ORDER, emptySignalBook, signalBoard, signalRead, type SignalBook } from "./signalread";
+import {
+  SIGNAL_TERM_ORDER, adjOf, emptySignalBook, signalBoard, signalRead,
+  type SignalBook, type SignalChannelWeights,
+} from "./signalread";
 import { studyStock } from "./stock";
 import { traitSdMult } from "./traits";
 
@@ -542,5 +545,103 @@ describe("rawTerms — the coalitional game's player list", () => {
   it("declares every key exactly once", () => {
     expect(new Set(SIGNAL_TERM_ORDER).size).toBe(SIGNAL_TERM_ORDER.length);
     expect(SIGNAL_TERM_ORDER.length).toBe(7);
+  });
+});
+
+/**
+ * §2 of the prediction-math audit. Each channel earns a credibility multiplier
+ * `a_k` with prior 1 — "this channel pulls exactly the weight it was authored
+ * with" until its own record says otherwise. It folds in HERE, at the point the
+ * candidates are assembled, so every downstream reading of the read (the terms
+ * list, the Shapley player list, rawSum, adj) is computed from the same
+ * reshaped number rather than from two arithmetic paths that could drift.
+ */
+describe("signalRead — channel credibility weights", () => {
+  const SUB_ATT = SUB({ attendancePct: 75 });
+
+  it("is the IDENTITY when no weights are passed", () => {
+    const bare = signalRead(SUB_ATT, emptySignalBook, [], null, null, ASOF);
+    const empty = signalRead(SUB_ATT, emptySignalBook, [], null, null, ASOF, { weights: {} });
+    expect(empty).toEqual(bare);
+  });
+
+  it("is the IDENTITY when every weight is exactly 1", () => {
+    const bare = signalRead(SUB_ATT, emptySignalBook, [], null, null, ASOF);
+    const ones = signalRead(SUB_ATT, emptySignalBook, [], null, null, ASOF, {
+      weights: { attendance: 1, stock: 1, mastery: 1, rest: 1, disruption: 1, anxiety: 1, chronotype: 1 },
+    });
+    expect(ones).toEqual(bare);
+  });
+
+  it("scales the channel's contribution, and rawSum/adj with it", () => {
+    const bare = signalRead(SUB_ATT, emptySignalBook, [], null, null, ASOF);
+    const half = signalRead(SUB_ATT, emptySignalBook, [], null, null, ASOF, { weights: { attendance: 0.5 } });
+    const bareAtt = bare.rawTerms.find((t) => t.key === "attendance")!.pts;
+    const halfAtt = half.rawTerms.find((t) => t.key === "attendance")!.pts;
+    expect(halfAtt).toBeCloseTo(bareAtt * 0.5, 12);
+    expect(half.rawSum).toBeCloseTo(bare.rawSum * 0.5, 12);
+  });
+
+  it("says so on the note when a channel is not pulling its authored weight", () => {
+    const out = signalRead(SUB_ATT, emptySignalBook, [], null, null, ASOF, { weights: { attendance: 0.5 } });
+    const note = out.terms.find((t) => t.key === "attendance")!.note;
+    // The raw channel read is still described; the multiplier is stated, not hidden.
+    expect(note).toMatch(/×0\.50 EARNED/);
+  });
+
+  it("carries no multiplier suffix at the authored weight", () => {
+    const out = signalRead(SUB_ATT, emptySignalBook, [], null, null, ASOF);
+    expect(out.terms.find((t) => t.key === "attendance")!.note).not.toMatch(/EARNED/);
+  });
+
+  it("a zero weight makes the channel a null player, not a zero-point row", () => {
+    const out = signalRead(SUB_ATT, emptySignalBook, [], null, null, ASOF, { weights: { attendance: 0 } });
+    expect(out.rawTerms.find((t) => t.key === "attendance")).toBeUndefined();
+    expect(out.adj).toBe(0);
+  });
+
+  it("applies the display floor to the WEIGHTED contribution, not the raw one", () => {
+    // 85% attended charges -0.15pt at MASTERY_W; at a_k = 0.2 that is -0.03,
+    // under SIGNAL_NOTE_FLOOR — no longer a reason, still a player.
+    const out = signalRead(SUB({ attendancePct: 85 }), emptySignalBook, [], null, null, ASOF, {
+      weights: { attendance: 0.2 },
+    });
+    expect(out.terms.find((t) => t.key === "attendance")).toBeUndefined();
+    expect(out.rawTerms.find((t) => t.key === "attendance")).toBeTruthy();
+  });
+
+  it("leaves sdMult alone — credibility reshapes the SHIFT, never the humility", () => {
+    const sub = SUB({ attendancePct: 75, traits: TR({ determinism: 0 }) });
+    const bare = signalRead(sub, emptySignalBook, [], null, null, ASOF);
+    const scaled = signalRead(sub, emptySignalBook, [], null, null, ASOF, { weights: { attendance: 0.25 } });
+    expect(bare.sdMult).toBeGreaterThan(1);
+    expect(scaled.sdMult).toBe(bare.sdMult);
+  });
+});
+
+describe("adjOf — one owner of the clamped shift", () => {
+  it("sums the players and clamps, exactly as signalRead does", () => {
+    const out = adjOf([{ key: "stock", pts: 3 }, { key: "mastery", pts: 3 }], SIGNAL_ADJ_CAP);
+    expect(out.rawSum).toBeCloseTo(6, 12);
+    expect(out.adj).toBe(SIGNAL_ADJ_CAP);
+  });
+
+  it("is 0/0 on an empty player list", () => {
+    expect(adjOf([], SIGNAL_ADJ_CAP)).toEqual({ rawSum: 0, adj: 0 });
+  });
+
+  it("agrees with signalRead's own adj on a real read", () => {
+    const read = signalRead(SUB({ attendancePct: 75 }), emptySignalBook, [], null, null, ASOF);
+    expect(adjOf(read.rawTerms, SIGNAL_ADJ_CAP).adj).toBe(read.adj);
+  });
+});
+
+describe("signalBoard — weights reach every desk", () => {
+  it("passes the multipliers through to each desk's read", () => {
+    const subs = [SUB({ id: "s1", attendancePct: 75 })];
+    const weights: SignalChannelWeights = { attendance: 0.5 };
+    const bare = signalBoard(subs, emptySignalBook, [], [], new Map(), ASOF);
+    const scaled = signalBoard(subs, emptySignalBook, [], [], new Map(), ASOF, weights);
+    expect(scaled.get("s1")!.rawSum).toBeCloseTo(bare.get("s1")!.rawSum * 0.5, 12);
   });
 });

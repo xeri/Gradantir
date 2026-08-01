@@ -71,6 +71,19 @@ export interface SignalRawTerm {
   pts: number;
 }
 
+/**
+ * Per-channel credibility multipliers (audit Part I §2). `a_k` scales the
+ * channel's own authored point read before it enters the sum: prior 1, meaning
+ * "this channel pulls exactly the weight it was authored with", moved only by
+ * its own measured record (see channels.ts). An ABSENT key is 1, so a caller
+ * that has fitted nothing passes nothing and every read is byte-identical to
+ * the unweighted one.
+ *
+ * The hand-set constants in ./params.ts are NOT touched by this — they are the
+ * prior, and measurement moves the multiplier, never the constant.
+ */
+export type SignalChannelWeights = Partial<Record<SignalTermKey, number>>;
+
 export interface SignalTerm {
   key: SignalTermKey;
   pts: number;
@@ -147,6 +160,19 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
 /** "+x.x" for non-negative, "-x.x" for negative — toFixed already carries the sign for negatives. */
 const signed1 = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}`;
 
+/**
+ * The clamped shift a player list implies. ONE owner, because two callers now
+ * need this arithmetic — `signalRead` building a desk's read, and
+ * `signalskill`/`channels` replaying a scored round at a candidate weight
+ * vector without re-reading the book. A fit computed against different
+ * arithmetic from the board it ships to would be silently invalid (audit
+ * §1.4's rule, applied one layer down).
+ */
+export function adjOf(terms: readonly SignalRawTerm[], cap: number): { rawSum: number; adj: number } {
+  const rawSum = terms.reduce((a, t) => a + t.pts, 0);
+  return { rawSum, adj: round2(clamp(rawSum, -cap, cap)) };
+}
+
 type Candidate = { pts: number; note: () => string };
 
 export function signalRead(
@@ -156,7 +182,7 @@ export function signalRead(
   next: NextSitting | null,
   modelMean: number | null,
   asOf: string,
-  opts?: { drop?: ReadonlySet<SignalTermKey> },
+  opts?: { drop?: ReadonlySet<SignalTermKey>; weights?: SignalChannelWeights },
 ): SignalRead {
   const dropped = (k: SignalTermKey) => opts?.drop?.has(k) ?? false;
 
@@ -277,26 +303,46 @@ export function signalRead(
   }
 
   const keys = SIGNAL_TERM_ORDER.filter((k) => raw[k] != null);
-  const sum = keys.reduce((a, k) => a + raw[k]!.pts, 0);
-  const adj = round2(clamp(sum, -SIGNAL_ADJ_CAP, SIGNAL_ADJ_CAP));
+
+  // CHANNEL CREDIBILITY (audit Part I §2). Every candidate's authored read is
+  // scaled by its own measured multiplier before anything else looks at it, so
+  // `terms`, `rawTerms`, `rawSum` and `adj` are one arithmetic path rather
+  // than four that could drift apart. Absent (the ordinary case, and the only
+  // case the committed fixture ever sees) is 1, and the read is identical to
+  // what it was before this parameter existed.
+  const weightOf = (k: SignalTermKey): number => opts?.weights?.[k] ?? 1;
+  const pts: Partial<Record<SignalTermKey, number>> = {};
+  for (const k of keys) pts[k] = weightOf(k) * raw[k]!.pts;
+
+  // The Shapley player list: every candidate that actually contributed AFTER
+  // its own multiplier, floor or no floor. An exact zero is a null player —
+  // worth nothing itself and leaving every other φ unchanged — so it is
+  // dropped, which is what keeps an untouched book reading `rawTerms: []`, and
+  // what makes a channel measured all the way down to a_k = 0 disappear from
+  // the game rather than sit in it at zero.
+  const rawTerms: SignalRawTerm[] = keys
+    .filter((k) => pts[k] !== 0)
+    .map((k) => ({ key: k, pts: pts[k] as number }));
+
+  const { rawSum: sum, adj } = adjOf(rawTerms, SIGNAL_ADJ_CAP);
 
   const terms: SignalTerm[] = keys
-    .filter((k) => Math.abs(raw[k]!.pts) >= SIGNAL_NOTE_FLOOR)
-    .map((k) => ({ key: k, pts: raw[k]!.pts, note: raw[k]!.note() }))
+    .filter((k) => Math.abs(pts[k] as number) >= SIGNAL_NOTE_FLOOR)
+    .map((k) => {
+      const a = weightOf(k);
+      // The note describes the CHANNEL READ, which is the authored number, and
+      // then states the multiplier when it is not 1. Quoting the scaled figure
+      // under the channel's own label would misreport what the channel read;
+      // omitting the multiplier would misreport what it was paid.
+      const note = a === 1 ? raw[k]!.note() : `${raw[k]!.note()} · ×${a.toFixed(2)} EARNED`;
+      return { key: k, pts: pts[k] as number, note };
+    })
     .sort((a, b) => {
       // Harshest first: most-negative first, then positives by |pts| desc.
       if (a.pts < 0 && b.pts < 0) return a.pts - b.pts;
       if (a.pts >= 0 && b.pts >= 0) return b.pts - a.pts;
       return a.pts < 0 ? -1 : 1;
     });
-
-  // The Shapley player list: every candidate that actually contributed, floor
-  // or no floor. An exact zero is a null player — worth nothing itself and
-  // leaving every other φ unchanged — so it is dropped, which is what keeps an
-  // untouched book reading `rawTerms: []`.
-  const rawTerms: SignalRawTerm[] = keys
-    .filter((k) => raw[k]!.pts !== 0)
-    .map((k) => ({ key: k, pts: raw[k]!.pts }));
 
   const sdMult = traitSdMult(sub.traits ?? null, unevenness, timeErrorShareOf(subjMarks), sub.belief ?? null);
 
@@ -319,6 +365,10 @@ export function signalRead(
  * not lineage-inherited — a split desk's pre-split signal history stays with
  * the ancestor that logged it; carrying it forward is the caller's concern
  * if it ever wants that, same as `pricesAsOf` documents for its own inputs.
+ *
+ * `weights` are the per-channel credibility multipliers (audit Part I §2),
+ * fitted by channels.ts and passed straight through — absent means every
+ * channel pulls its authored weight, which is what an unscored book gets.
  */
 export function signalBoard(
   subjects: Subject[],
@@ -327,6 +377,7 @@ export function signalBoard(
   upcoming: Upcoming[],
   modelMeans: Map<string, number | null>,
   asOf: string,
+  weights?: SignalChannelWeights | null,
 ): Map<string, SignalRead> {
   const out = new Map<string, SignalRead>();
   for (const sub of subjects) {
@@ -338,7 +389,7 @@ export function signalBoard(
       soonest == null ? null : { date: soonest.date, hour: soonest.hour ?? null, weight: soonest.weight ?? null };
     const modelMean = modelMeans.get(sub.id) ?? null;
     const subEntries = entries.filter((e) => e.subjectId === sub.id);
-    out.set(sub.id, signalRead(sub, book, subEntries, next, modelMean, asOf));
+    out.set(sub.id, signalRead(sub, book, subEntries, next, modelMean, asOf, weights ? { weights } : undefined));
   }
   return out;
 }
