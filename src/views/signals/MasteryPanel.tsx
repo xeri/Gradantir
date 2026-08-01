@@ -14,7 +14,7 @@ import type { MasteryRead, TopicMastery } from "../../lib/quant/signals/mastery"
  * with the exact same per-subject filtering `signalRead` already applies) and
  * handed down as `masteryBySubject`. This component never imports or calls
  * either function — the same "the leaf renders, the view computes" split the
- * per-term marginal table one level up already holds, so the engine is
+ * per-term Shapley table one level up already holds, so the engine is
  * called from exactly one place per render pass rather than drifting out of
  * sync with whatever `signalRead` itself folds into the priced board.
  *

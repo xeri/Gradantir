@@ -8,7 +8,7 @@ import type { VoiItem } from "../../lib/quant/signals/voi";
  * output (voi.ts, T11): "what to log next" to buy forecast precision,
  * weighed against the logging effort it costs. The same "the leaf renders,
  * the view computes" split every other SIGNALS leaf holds (`MasteryPanel`,
- * the per-term marginal table) — this component never calls
+ * the per-term Shapley table) — this component never calls
  * `valueOfInformation` itself, only renders the `VoiItem[]` App.tsx's own
  * `voi` memo already computed and ranked.
  *

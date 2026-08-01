@@ -16,7 +16,7 @@ import type { AppData } from "../../types";
  * book that has never touched study sessions, rest logs, disruptions, topic
  * marks or the person profile, every desk's read collapses to the identity —
  * adj 0, sdMult 1, terms []. The SIGNALS view shell has to honour that
- * honestly: zero per-term marginals, a 0.00 ADJ and a 0.00 W·ADJ on every
+ * honestly: zero per-term Shapley shares, a 0.00 ADJ and a 0.00 W·ADJ on every
  * live desk, no NaN anywhere, and no crash — never a fabricated number where
  * the engine produced none. This is also the shell's gate-safety net: if it
  * ever recomputed the board instead of reusing App's memos, or mis-called the

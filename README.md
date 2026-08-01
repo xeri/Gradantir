@@ -1603,15 +1603,32 @@ unmoved by its existence regardless of what it returns.
 
 ### Two things worth stating plainly
 
-**Per-term marginals do not sum to `adj`** once two or more terms jointly bind the ±`SIGNAL_ADJ_CAP`
-clamp. The SIGNALS view shows each term column as a *marginal* — `adj(full)` minus `adj` with that
-term dropped — not its raw read, so the column stays true to what actually moved the clamped shift.
-But the drop-one marginal for term $i$ is $\text{cap} - \text{clamp}(S - \text{pts}_i,\,\pm\text{cap})$,
-which is not linear in $\text{pts}_i$ once the clamp binds: with two terms at +3 each ($S=+6$, capped
-`adj = +4`), each marginal is $4 - \text{clamp}(3,\pm4) = +1$, summing to +2, not +4. Each marginal is
-individually honest about what dropping that one term alone would have changed; the sum across terms
-is not additive once the cap is live, and this is stated on the SIGNALS view's own footer, not just
-here.
+**Per-term columns sum to `adj` exactly** — including when the ±`SIGNAL_ADJ_CAP` clamp is binding.
+The SIGNALS view shows each term column as its *Shapley value* in the clamped coalitional game
+(`quant/signals/shapley.ts`), not its raw read:
+
+$$
+v(S) = \operatorname{clip}_{\pm\text{CAP}}\!\Big(\sum_{j\in S}\pi_j\Big),\qquad
+\varphi_k = \sum_{S\subseteq N\setminus\{k\}} \frac{|S|!\,(n-|S|-1)!}{n!}\big[v(S\cup\{k\}) - v(S)\big].
+$$
+
+The efficiency axiom gives $\sum_k \varphi_k = v(N) - v(\emptyset) = \text{adj}$ exactly, cap binding
+or not; symmetry splits a bound cap evenly between equal claimants rather than by declaration order;
+and the null-player axiom pays a channel that contributed nothing exactly nothing. All $2^7 = 128$
+coalitions are enumerated **exactly** — never sampled, because a sampled $\varphi$ would make the
+table's own additivity claim approximate. Displayed cells are rounded to 2dp with the residual landing
+on the largest line, `mark.ts`'s own attribution rule, so the shown row sums to the shown `ADJ` too.
+
+This replaced a drop-one marginal, $\text{adj(full)} - \text{adj(drop } k)$, which is
+$\text{cap} - \text{clamp}(S - \pi_k,\,\pm\text{cap})$ once the clamp binds and therefore not linear in
+$\pi_k$: with two terms at +3 each ($S=+6$, capped `adj = +4`), each marginal read
+$4 - \text{clamp}(3,\pm4) = +1$ and the row summed to +2 beside an `ADJ` of +4. This section used to
+explain that at length. The explanation was correct and the design was wrong, so the design changed.
+Unclamped the two readings coincide exactly, which is why the old column was defensible on most books
+and wrong on precisely the ones where the layer had the most to say.
+
+The **raw** term rows on `signal.adjust`'s own derivation card are a different question and still
+overshoot a bound cap — that card says so, on its clamp step, whenever the clamp actually binds.
 
 **The engine distinguishes "never set" from "set to a neutral default."** `mastery.ts`'s prereq gate
 fires only when a subject's `traits` object is non-null at all — a topic's ceiling is never compared

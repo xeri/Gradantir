@@ -11,7 +11,7 @@ import type { Subject, Topic } from "../../types";
  * output (`topicMastery`/`masteryRead`, mastery.ts): it must never call
  * either function itself, only render the `SubjectMasteryRead` the SIGNALS
  * view computed once and handed down — the same "the leaf renders, the view
- * computes" split `signalRead`'s per-term marginals already hold one level
+ * computes" split `signalRead`'s per-term Shapley columns already hold one level
  * up. The one thing that DOES write here is topic add/edit, which is a
  * discrete, file-on-submit event (LogPanels' pattern, T16) — never a slider,
  * so it needs no draft.

@@ -152,7 +152,7 @@ export function Signals({
   /* MASTERY (T17) — computed HERE, once, and handed to `MasteryPanel` as a
      finished read: the panel itself never calls `topicMastery`/`masteryRead`,
      the same "the leaf renders, the view computes" split `rows` above already
-     holds for the per-term marginals. Filtering mirrors `signalRead`'s own
+     holds for the per-term Shapley columns. Filtering mirrors `signalRead`'s own
      convention exactly (topics by subjectId, marks by the resulting topic id
      set, sessions by subjectId) so this is the identical per-subject slice
      `signalRead` folds the mastery term from — just with the intermediate
@@ -174,7 +174,7 @@ export function Signals({
 
   /* STOCK (T19) — the same "computed here once, handed down as a finished
      read" split as `masteryBySubject` above, so `signal.stock`'s derivation
-     quotes the identical StockRead the STOCK column's marginal was computed
+     quotes the identical StockRead the STOCK column's own share was computed
      from, never a second call into `studyStock`. */
   const stockBySubject = useMemo(() => {
     const out: Record<string, StockRead> = {};
