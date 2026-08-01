@@ -6,6 +6,7 @@ import { computeStats } from "../../lib/stats";
 import { sanitizeSettings } from "../../lib/io";
 import { emptySignalBook, signalBoard } from "../../lib/quant/signals/signalread";
 import { NO_SIGNAL_SKILL } from "../../lib/quant/signals/signalskill";
+import { NO_CHANNEL_FIT } from "../../lib/quant/signals/channels";
 import { valueOfInformation } from "../../lib/quant/signals/voi";
 import type { AppData } from "../../types";
 
@@ -45,6 +46,9 @@ function render(signalOn = true) {
       signalReads={signalReads}
       modelMeans={modelMeans}
       signalFit={NO_SIGNAL_SKILL}
+      // The committed fixture scores no signal round, so every channel holds
+      // its authored prior — the identity fit is the honest value here.
+      signalChannels={NO_CHANNEL_FIT}
       signalOn={signalOn}
       todayIso={TODAY}
       voi={voi}

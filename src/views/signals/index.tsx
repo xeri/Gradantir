@@ -3,6 +3,7 @@ import { C, FONT, microLabel } from "../../theme";
 import { Derive } from "../../components/ui/Derive";
 import { Panel } from "../../components/ui/Panel";
 import { PricedBanner } from "../../components/ui/PricedBanner";
+import { ChannelPanel } from "./ChannelPanel";
 import { LogPanels } from "./LogPanels";
 import { MasteryPanel, type SubjectMasteryRead } from "./MasteryPanel";
 import { TraitsEditor, type SubjectTraitsPatch } from "./TraitsEditor";
@@ -13,6 +14,7 @@ import { SIGNAL_ADJ_CAP } from "../../lib/quant/signals/params";
 import { topicMastery, masteryRead, type MasteryRead } from "../../lib/quant/signals/mastery";
 import { studyStock, type StockRead } from "../../lib/quant/signals/stock";
 import type { SignalSkill } from "../../lib/quant/signals/signalskill";
+import type { SignalChannelFit } from "../../lib/quant/signals/channels";
 import type { VoiItem } from "../../lib/quant/signals/voi";
 import type { DeriveCtx } from "../../lib/derive";
 import type { DisruptionKind, GradeEntry, Profile, SessionKind, SubjectStat } from "../../types";
@@ -47,6 +49,13 @@ import type { DisruptionKind, GradeEntry, Profile, SessionKind, SubjectStat } fr
  * ONE read per desk, not eight: `SignalRead.rawTerms` carries the player list,
  * so the game needs no ablation re-runs. `signalRead`'s `{drop}` seam stays
  * where it is — VOI's real-ablation work (M9) is its remaining caller.
+ *
+ * Below the per-desk table, the CHANNEL CREDIBILITY scoreboard (audit Part I
+ * §2.5): what each of the seven channels has been MEASURED to be worth against
+ * what it was AUTHORED to be worth, over how many scored rounds, and what
+ * dropping it would cost the book's walk-forward CRPS. The seven terms used to
+ * share one earned weight, so a student could not tell whether mastery was
+ * carrying the layer while chronotype was noise — and got no benefit if so.
  *
  * The identity this shell defends is signalread.ts's own: the committed
  * fixture carries no signal data, so every desk's read collapses to adj 0,
@@ -96,6 +105,10 @@ export interface SignalsProps {
    *  `signal.mastery`'s derivation quotes as the house's side. */
   modelMeans: Map<string, number | null>;
   signalFit: SignalSkill;
+  /** The per-channel credibility fit (audit Part I §2) — App's own memo,
+   *  reused. The multipliers it carries are already folded into `signalReads`;
+   *  this is the scoreboard's copy of the same fit, never a second one. */
+  signalChannels: SignalChannelFit;
   signalOn: boolean;
   todayIso: string;
   /** App's own `voi` memo (T18) — the VOI ranker's (T11) top-8 output,
@@ -126,7 +139,7 @@ export interface SignalsProps {
 }
 
 export function Signals({
-  stats, entries, signalBook, signalReads, modelMeans, signalFit, signalOn, todayIso, voi,
+  stats, entries, signalBook, signalReads, modelMeans, signalFit, signalChannels, signalOn, todayIso, voi,
   onSetSignalWeighting, onOpenSubject, onLogSession, onLogRest, onLogDisruption,
   onAddTopic, onEditTopic, profile, onSaveTraits, onSaveProfile, deriveCtx,
 }: SignalsProps) {
@@ -320,6 +333,10 @@ export function Signals({
           NOT THE ±{SIGNAL_ADJ_CAP}PT CAP IS BINDING. ADJ = THE DESK'S OWN CLAMPED SHIFT. W·ADJ = WHAT ACTUALLY MOVES
           THE NEXT-EXAM MEAN ONCE THE EARNED WEIGHT ABOVE IS APPLIED.
         </p>
+      </Panel>
+
+      <Panel title="CHANNEL CREDIBILITY — WHAT EACH SIGNAL HAS EARNED" pad={false}>
+        <ChannelPanel fit={signalChannels} />
       </Panel>
 
       <LogPanels
