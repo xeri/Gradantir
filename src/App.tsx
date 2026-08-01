@@ -34,7 +34,8 @@ import { IDENTITY_POOL, fitSelfWeight, stakedSittings } from "./lib/quant/pool";
 import { IDENTITY_AI_POOL, aiChargePts, fitAiWeight, poolBoardJoint } from "./lib/quant/aipool";
 import { applySignals } from "./lib/quant/signals/apply";
 import { emptySignalBook, signalBoard, type SignalBook } from "./lib/quant/signals/signalread";
-import { NO_SIGNAL_SKILL, signalSkill } from "./lib/quant/signals/signalskill";
+import { NO_SIGNAL_SKILL, signalRounds, signalSkill } from "./lib/quant/signals/signalskill";
+import { NO_CHANNEL_FIT, fitSignalChannels } from "./lib/quant/signals/channels";
 import { valueOfInformation } from "./lib/quant/signals/voi";
 import { classifyUpcoming } from "./lib/upcoming";
 import { fitDepth } from "./lib/quant/depth";
@@ -224,28 +225,47 @@ export default function App() {
     () => new Map(stats.map((s) => [s.sub.id, s.quant?.nextExam.mean ?? null])),
     [stats],
   );
-  /* The per-desk life-signals read, priced against the house's OWN nextExam
-     mean so mastery's "book says X vs desk Y" comparison is against the same
-     number the board is about to show. */
-  const signalReads = useMemo(
-    () => (data
-      ? signalBoard(data.subjects, signalBook, data.entries, data.upcoming ?? [], modelMeans, todayStr())
-      : new Map()),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data?.subjects, signalBook, data?.entries, data?.upcoming, modelMeans],
-  );
-  /* The channel's earned weight (D5). Two-board invariant: this reads the
+  /* The walk-forward replay, ONCE (audit Part I §2). Both fits below read the
+     same rounds: the shape fit searches the per-channel multipliers over them
+     and the scale fit scores the result. Two-board invariant: this reads the
      REGISTER and the raw subjects/entries only — never `pooled`, never even
      `stats` — the same discipline the self/wire pools hold against
-     `rawStats`, just with no board argument to get wrong in the first
-     place. `signalWeighting` follows the other student-input switches'
-     polarity: absent => ON. */
+     `rawStats`, just with no board argument to get wrong in the first place. */
+  const signalRoundsMemo = useMemo(
+    () => (data ? signalRounds(register, signalBook, data.subjects, data.entries) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [register, signalBook, data?.subjects, data?.entries],
+  );
+  /* SHAPE (audit Part I §2). Which of the seven channels has actually been
+     predicting, as a multiplier on its own authored weight with prior 1.
+     Fitted BEFORE the scale below and normalised to mean 1, because w · a_k
+     is a product and only the product is identified from one student's book.
+     `signalWeighting` follows the other student-input switches' polarity:
+     absent => ON. */
+  const signalChannels = useMemo(
+    () => (data ? fitSignalChannels(signalRoundsMemo, data.settings.signalWeighting !== false) : NO_CHANNEL_FIT),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [signalRoundsMemo, data?.settings.signalWeighting],
+  );
+  /* SCALE — the channel's earned weight (D5), fitted on the RESHAPED adj, so
+     the weight is earned by the same adjustment the board is about to apply. */
   const signalFit = useMemo(
     () => (data
-      ? signalSkill(register, signalBook, data.subjects, data.entries, data.settings.signalWeighting !== false)
+      ? signalSkill(signalRoundsMemo, signalChannels.weights, data.settings.signalWeighting !== false)
       : NO_SIGNAL_SKILL),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [register, signalBook, data?.subjects, data?.entries, data?.settings.signalWeighting],
+    [signalRoundsMemo, signalChannels, data?.settings.signalWeighting],
+  );
+  /* The per-desk life-signals read, priced against the house's OWN nextExam
+     mean so mastery's "book says X vs desk Y" comparison is against the same
+     number the board is about to show — and at the fitted channel weights, so
+     the SIGNALS table's Shapley columns decompose the adjustment that ships. */
+  const signalReads = useMemo(
+    () => (data
+      ? signalBoard(data.subjects, signalBook, data.entries, data.upcoming ?? [], modelMeans, todayStr(), signalChannels.weights)
+      : new Map()),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data?.subjects, signalBook, data?.entries, data?.upcoming, modelMeans, signalChannels],
   );
   /* Signals modify the HOUSE side: shifts `stats`' own nextExam by the earned
      weight, feeding the existing pool memo below. `rawStats` stays untouched
@@ -1020,6 +1040,7 @@ export default function App() {
                 signalReads={signalReads}
                 modelMeans={modelMeans}
                 signalFit={signalFit}
+                signalChannels={signalChannels}
                 signalOn={data.settings.signalWeighting !== false}
                 todayIso={todayStr()}
                 voi={voi}
