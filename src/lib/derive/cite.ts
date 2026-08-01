@@ -326,6 +326,13 @@ export const CITATIONS = {
     title: "Rank Analysis of Incomplete Block Designs: I. The Method of Paired Comparisons",
     venue: "Biometrika 39(3/4), 324–345",
   },
+  shapley1953: {
+    short: "Shapley (1953)",
+    authors: "Shapley, L. S.",
+    year: 1953,
+    title: "A Value for n-Person Games",
+    venue: "Contributions to the Theory of Games II, Annals of Mathematics Studies 28, 307–317",
+  },
   elo1978: {
     short: "Elo (1978)",
     authors: "Elo, A. E.",

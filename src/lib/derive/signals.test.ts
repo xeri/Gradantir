@@ -197,36 +197,40 @@ describe("signal.stock — the tanh substitution uses the real constants", () =>
 });
 
 describe("signal.stock — the STOCK column and the raw read are different figures", () => {
-  it("reports the raw channel read by default, and the MARGINAL only when keyed 'marginal'", () => {
+  it("reports the raw channel read by default, and the SHAPLEY SHARE only when keyed 'shapley'", () => {
     const stock: StockRead = { k14: 500, baseline: 300, term: 1.5, recallRatio: 0.4, hoursPerWeek: 6 };
     // Deliberately different from `stock.term` (1.5) — proves the two modes
     // read genuinely different numbers, not the same one formatted twice.
-    const marginal = 0.8;
+    // (A raw read and its share diverge exactly when the ±cap binds, which is
+    // the case the whole decomposition exists for.)
+    const phi = 0.8;
     const ctx: DeriveCtx = {
       stat: STAT(SUB()),
-      card: { signalStock: { s1: stock }, signalMarginal: { s1: { stock: marginal } } },
+      card: { signalStock: { s1: stock }, signalShapley: { s1: { stock: phi } } },
     };
     const raw = derivationFor("signal.stock", ctx)!;
-    const marg = derivationFor("signal.stock", { ...ctx, key: "marginal" })!;
+    const share = derivationFor("signal.stock", { ...ctx, key: "shapley" })!;
     expect(raw.result.value).toBe("+1.50");
-    expect(marg.result.value).toBe("+0.80");
-    expect(raw.result.value).not.toBe(marg.result.value);
+    expect(share.result.value).toBe("+0.80");
+    expect(raw.result.value).not.toBe(share.result.value);
+    expect(share.symbol).toBe("\\varphi_{\\text{stock}}");
+    expect(share.refs).toContain("shapley1953");
   });
 
-  it("prints an em-dash (never '+0.00') for a near-zero marginal, matching the table cell's own formatter", () => {
+  it("prints an em-dash (never '+0.00') for a near-zero share, matching the table cell's own formatter", () => {
     const stock: StockRead = { k14: 500, baseline: 300, term: 1.5, recallRatio: 0.4, hoursPerWeek: 6 };
     const ctx: DeriveCtx = {
       stat: STAT(SUB()),
-      card: { signalStock: { s1: stock }, signalMarginal: { s1: { stock: 0 } } },
-      key: "marginal",
+      card: { signalStock: { s1: stock }, signalShapley: { s1: { stock: 0 } } },
+      key: "shapley",
     };
     const d = derivationFor("signal.stock", ctx)!;
     expect(d.result.value).toBe("—");
   });
 
-  it("falls back to the raw read when 'marginal' is asked but no marginal fact exists for this desk", () => {
+  it("falls back to the raw read when 'shapley' is asked but no decomposition exists for this desk", () => {
     const stock: StockRead = { k14: 500, baseline: 300, term: 1.5, recallRatio: 0.4, hoursPerWeek: 6 };
-    const ctx: DeriveCtx = { stat: STAT(SUB()), card: { signalStock: { s1: stock } }, key: "marginal" };
+    const ctx: DeriveCtx = { stat: STAT(SUB()), card: { signalStock: { s1: stock } }, key: "shapley" };
     const d = derivationFor("signal.stock", ctx)!;
     expect(d.result.value).toBe("+1.50");
   });
@@ -301,7 +305,7 @@ describe("signal.mastery — the P equation carries the attendance shave honestl
 });
 
 describe("signal.mastery — the MASTERY column and the raw read are different figures", () => {
-  it("reports the raw channel read by default, and the MARGINAL only when keyed 'marginal'", () => {
+  it("reports the raw channel read by default, and the SHAPLEY SHARE only when keyed 'shapley'", () => {
     const mastery: MasteryRead = {
       topics: [{ topicId: "t1", m: 0.8, mEff: 0.8, lastTouched: TODAY, n: 4 }],
       coverage: 0.5,
@@ -309,19 +313,21 @@ describe("signal.mastery — the MASTERY column and the raw read are different f
       term: 2.1,
       unevenness: 0,
     };
-    const marginal = 1.4; // deliberately different from mastery.term (2.1)
+    const phi = 1.4; // deliberately different from mastery.term (2.1)
     const ctx: DeriveCtx = {
       stat: STAT(SUB()),
-      card: { signalMastery: { s1: mastery }, signalModelMean: { s1: 60 }, signalMarginal: { s1: { mastery: marginal } } },
+      card: { signalMastery: { s1: mastery }, signalModelMean: { s1: 60 }, signalShapley: { s1: { mastery: phi } } },
     };
     const raw = derivationFor("signal.mastery", ctx)!;
-    const marg = derivationFor("signal.mastery", { ...ctx, key: "marginal" })!;
+    const share = derivationFor("signal.mastery", { ...ctx, key: "shapley" })!;
     expect(raw.result.value).toBe("+2.10");
-    expect(marg.result.value).toBe("+1.40");
-    expect(raw.result.value).not.toBe(marg.result.value);
+    expect(share.result.value).toBe("+1.40");
+    expect(raw.result.value).not.toBe(share.result.value);
+    expect(share.symbol).toBe("\\varphi_{\\text{mastery}}");
+    expect(share.refs).toContain("shapley1953");
   });
 
-  it("prints an em-dash (never '+0.00') for a near-zero marginal, matching the table cell's own formatter", () => {
+  it("prints an em-dash (never '+0.00') for a near-zero share, matching the table cell's own formatter", () => {
     const mastery: MasteryRead = {
       topics: [{ topicId: "t1", m: 0.8, mEff: 0.8, lastTouched: TODAY, n: 4 }],
       coverage: 0.5,
@@ -331,8 +337,8 @@ describe("signal.mastery — the MASTERY column and the raw read are different f
     };
     const ctx: DeriveCtx = {
       stat: STAT(SUB()),
-      card: { signalMastery: { s1: mastery }, signalModelMean: { s1: 60 }, signalMarginal: { s1: { mastery: 0 } } },
-      key: "marginal",
+      card: { signalMastery: { s1: mastery }, signalModelMean: { s1: 60 }, signalShapley: { s1: { mastery: 0 } } },
+      key: "shapley",
     };
     const d = derivationFor("signal.mastery", ctx)!;
     expect(d.result.value).toBe("—");
