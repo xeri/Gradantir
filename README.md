@@ -96,7 +96,7 @@ questions and must not inherit its weights.
 ### Notation
 
 Subject $s$ has prints $y_1,\dots,y_n$ (scores, 0–100) at calendar days $x_1 \le \dots \le x_n$,
-each of type $c_i \in \{\text{Exam},\text{Test},\text{Assignment},\text{Quiz}\}$, optionally
+each of type $`c_i \in \{\text{Exam},\text{Test},\text{Assignment},\text{Quiz}\}`$, optionally
 carrying a class average $a_i$, year-level average $g_i$, and placement $(r_i, N_i)$.
 "Today" is $x_\ast$. Detrended scores are $\tilde y_i$.
 
@@ -126,9 +126,9 @@ The reporting grid is the teaching grid shifted forward by a **settlement lag** 
 28 days), anchored to the *next* term's opening rather than the previous term's close so the
 seven-week summer cannot swallow a December round into February:
 
-$$
+```math
 \text{term}(d) \;=\; \max\{\,T : \text{start}(T) + L \le d \,\}
-$$
+```
 
 On the reference book this files all three April rounds as T1 and both August rounds as T2,
 across three years whose term dates differ by up to a fortnight. Published dates live in
@@ -156,9 +156,9 @@ A 60 on a paper the class averaged 50 is not the same event as a 60 when the cla
 averaged 75. Where a reference $\rho_i = a_i$ (else $g_i$) exists over $m$ prints, scores
 are recentred against the subject's usual reference level $\bar\rho$:
 
-$$
+```math
 \tilde y_i \;=\; y_i - \lambda\,(\rho_i - \bar\rho), \qquad \lambda = \frac{m}{m+2}
-$$
+```
 
 $\lambda < 1$ keeps a single reference point from over-correcting. Prints without a
 reference pass through untouched. Every *within-subject* quantity runs on $\tilde y$ — the
@@ -173,11 +173,11 @@ pooling. From per-subject means we estimate between-subject variance $\tau^2$ (f
 subjects always differ) and within-subject noise $\sigma^2$ (pooled, floored), then trust
 local data by
 
-$$
+```math
 B \;=\; \frac{\tau^2}{\tau^2 + \sigma^2/n},
 \qquad
 \hat\mu_{\text{shrunk}} \;=\; B\,\bar{\tilde y} + (1-B)\,\bar\mu_{\text{book}}
-$$
+```
 
 $B \to 0$ as $n \to 0$ (a new subject opens at the book's level); $B \to 1$ as evidence
 accumulates. If subjects genuinely spread far apart ($\tau^2$ large), even one print earns
@@ -195,29 +195,29 @@ correction is genuinely cross-subject and the scale stays a percentage.
 
 Ability is modeled as a random walk observed through noisy assessments:
 
-$$
+```math
 \alpha_t = \alpha_{t-\Delta} + w, \quad w \sim \mathcal N(0,\; q\,\Delta)
 \qquad\qquad
 \tilde y_i = \alpha_{t_i} + v_i, \quad v_i \sim \mathcal N(0,\; R_{c_i})
-$$
+```
 
 with $q = 0.06\ \text{pts}^2/\text{day}$ and per-type observation noise built from the
 **reliability standard deviations**
 
-$$
+```math
 R_c = \{\text{Exam } 5,\ \text{Test } 6.5,\ \text{Assignment } 8,\ \text{Quiz } 10\}\ \text{pts}
-$$
+```
 
 so the Kalman's observation *variance* is $R_c^2$. $R_c$ is a standard deviation everywhere
 in this document and everywhere in the code (`RELIABILITY_SD` in `params.ts`); it is squared
 only here, inside the filter. Per print — predict, then update:
 
-$$
+```math
 P \leftarrow P + q\,\Delta t, \qquad
 K = \frac{P}{P + R_c^2}, \qquad
 m \leftarrow m + K(\tilde y - m), \qquad
 P \leftarrow (1-K)\,P
-$$
+```
 
 Real day-gaps matter: a print after a 200-day break meets an honestly wider prior than one
 three days after the last. The prior is the pooled book mean with variance $15^2$, so the
@@ -231,13 +231,13 @@ The trend member takes the median of pairwise slopes (29% breakdown point), but 
 may only forecast if the *ordering* of the data supports it. Kendall's $\tau$ over
 $(x, \tilde y)$ yields a normal-approximation two-sided $p$, and the slope is gated:
 
-$$
+```math
 \hat\beta \;=\;
 \begin{cases}
 \beta_{TS}\,(1-p)^2 & n \ge 4 \text{ and } p \le 0.5\\[2pt]
 0 & \text{otherwise}
 \end{cases}
-$$
+```
 
 **What this does and does not guarantee.** Under the null — no monotone relationship at all —
 $p$ is approximately uniform, so roughly half of shuffled series *will* clear $p \le 0.5$ and
@@ -266,9 +266,9 @@ gate at all.
 fixes how *far*. Rather than ride the fitted line straight to the target, the member holds its
 fitted value at the last print and adds a **saturating** drift over the horizon $h$ (days):
 
-$$
+```math
 \Delta(h) \;=\; \hat\beta\,\tau_d\,\bigl(1 - e^{-h/\tau_d}\bigr), \qquad \tau_d = 90\ \text{days}
-$$
+```
 
 For a one-step gap $h \ll \tau_d$ this is $\approx \hat\beta h$ — the same straight line — so
 short-horizon forecasts are untouched; but the *total* drift can never exceed $\hat\beta\tau_d$,
@@ -283,13 +283,13 @@ saturation.
 
 A 60-day half-life crossed with per-type **signal weights**:
 
-$$
+```math
 w_i = 2^{-(x_\ast - x_i)/h} \cdot u_{c_i},
 \qquad
 \hat\mu_{\text{EWMA}} = \frac{\sum w_i \tilde y_i}{\sum w_i},
 \qquad
 u = \{\text{Test/Asgn } 1.6,\ \text{Exam } 1.25,\ \text{Quiz } 0.7\}
-$$
+```
 
 Note the deliberate asymmetry against the Kalman's $R_c$. **Reliability** asks *how
 precisely does one print measure ability?* — exams win, under controlled conditions.
@@ -301,21 +301,21 @@ of the project's central empirical claim about coursework, developed in §10 and
 ## 7 · Predictive distribution — NIG → Student-t
 
 Mean *and* variance are unknown, so a conjugate Normal-Inverse-Gamma prior
-$(\mu_0, \kappa_0, \alpha_0, \beta_0) = (\bar\mu_{\text{book}},\, 1,\, 1.5,\, \sigma^2_{\text{book}})$
+$`(\mu_0, \kappa_0, \alpha_0, \beta_0) = (\bar\mu_{\text{book}},\, 1,\, 1.5,\, \sigma^2_{\text{book}})`$
 updates on the data:
 
-$$
+```math
 \kappa_n = \kappa_0 + n,\quad
 \mu_n = \frac{\kappa_0\mu_0 + n\bar y}{\kappa_n},\quad
 \alpha_n = \alpha_0 + \tfrac n2,\quad
 \beta_n = \beta_0 + \tfrac S2 + \frac{\kappa_0 n(\bar y - \mu_0)^2}{2\kappa_n}
-$$
+```
 
 giving the posterior predictive
 
-$$
+```math
 y_{n+1} \;\sim\; t_{2\alpha_n}\!\left(\mu_n,\ \sqrt{\tfrac{\beta_n(\kappa_n+1)}{\alpha_n \kappa_n}}\right)
-$$
+```
 
 The degrees of freedom $2\alpha_n = 3 + n$ are the honesty mechanism: at $n=2$ the tails are
 heavy and the 90% interval is wide. Certainty is earned print by print. Quantiles are exact —
@@ -332,23 +332,23 @@ are combined by how well each *actually forecast prints it had not seen*. For ea
 last $k \le 8$ prints every member is refit on strictly earlier prints and scored on its
 one-step-ahead error; weights follow inverse regularized MSE:
 
-$$
+```math
 w_m \;\propto\; \frac{1}{\text{MSE}_m + \varepsilon}, \qquad \varepsilon = 4\ \text{pts}^2
-$$
+```
 
 Below $n=3$ there is nothing to validate against, so fixed priors apply $(0.35, 0.25, 0.30, 0.10)$.
 The blend is moment-matched as a mixture, so **member disagreement itself widens the band**:
 
-$$
+```math
 \hat\mu = \sum_m w_m \hat\mu_m,
 \qquad
 \hat\sigma^2 = \sum_m w_m\!\left[\hat\sigma_m^2 + (\hat\mu_m - \hat\mu)^2\right]
-$$
+```
 
 **Dispersion markup.** That mixture variance carries member disagreement and each member's
 in-sample residual scatter, but *not* the members' own estimation uncertainty, and it runs
 systematically too tight out-of-sample — the walk-forward 90% intervals covered only ~0.79.
-The published sd is therefore marked up, $\hat\sigma \leftarrow \rho\,\hat\sigma$ with
+The published sd is therefore marked up, $`\hat\sigma \leftarrow \rho\,\hat\sigma`$ with
 $\rho = 1.15$, a factor swept against walk-forward **CRPS** (not coverage): the score bottoms
 across a flat $\rho \in [1.1, 1.3]$ basin, so widening lowers a *proper* score — the shortfall
 was genuine over-confidence, not sacrificed sharpness. Coverage rises to ~0.84; the degrees of
@@ -364,9 +364,9 @@ mean at $n \approx 8$.
 
 ## 9 · Fair value
 
-$$
-\text{FV} = \operatorname{clip}_{[0,100]}(\hat\mu)
-$$
+```math
+\text{FV} = \mathrm{clip}_{[0,100]}(\hat\mu)
+```
 
 with $t_{3+n}(\hat\mu, \hat\sigma)$ credible intervals (50%, 90%) and a 10th-percentile
 downside $p_{10}$. **Fair value is the unbiased estimate and the basis of every forecast in
@@ -377,10 +377,10 @@ this document.** It is not what the terminal displays as the price.
 Coursework predicts exams; exams pay differently. The raw gap between winsorized exam and
 coursework means is shrunk toward zero by $\kappa = 3$ pseudo-observations:
 
-$$
+```math
 \hat\delta = \frac{n_E}{n_E + \kappa}\,
 \left(\overline{y}^{\,w}_{\text{exam}} - \overline{y}^{\,w}_{\text{coursework}}\right)
-$$
+```
 
 One exam moves the offset a quarter of the way; a track record moves it almost fully. This
 converts *"your assignments say 84 but exams print 78"* into a calibrated forecast, and it is
@@ -391,24 +391,24 @@ bridge, not a weight.
 it may be added to a coursework-only level and nowhere else. The tempting shorthand
 $\hat\mu + \hat\delta$ — capability plus the offset — crosses it one and a half times, because
 $\hat\mu$ already contains the exams. With effective exam weight $w$ inside the ensemble, that
-shorthand lands $w\,(E - C)$ past the exam level, always away from the exams and in proportion
+shorthand lands $`w\,(E - C)`$ past the exam level, always away from the exams and in proportion
 to how much the two disagree. On this book it forecast ENG's next paper at **71.1** against a
 recency-weighted exam level of 58.9 — above every exam ENG had sat in two years.
 
 So the oracle blends two estimates *of the same quantity*, each produced by the full ensemble
 of §8 on its own slice of the tape:
 
-$$
+```math
 \hat\mu_E = \text{ens}(\text{exams}),
 \qquad
 \hat\mu_C^{\to E} = \text{ens}(\text{coursework}) + \hat\delta,
 \qquad
 w_E = \frac{\sigma_E^{-2}}{\sigma_E^{-2} + \sigma_C^{-2}}
-$$
+```
 
-$$
-\widehat{\text{exam}}_{n+1} = \operatorname{clip}_{[0,100]}\!\big(w_E\,\hat\mu_E + (1-w_E)\,\hat\mu_C^{\to E}\big)
-$$
+```math
+\widehat{\text{exam}}_{n+1} = \mathrm{clip}_{[0,100]}\!\big(w_E\,\hat\mu_E + (1-w_E)\,\hat\mu_C^{\to E}\big)
+```
 
 Because both sides run through the ordinary ensemble, both inherit shrinkage toward the book,
 the Kalman's honest gap handling, the $\tau$ gate and the small-$n$ degradation — a subject
@@ -450,10 +450,10 @@ supports — *where should effort go tonight?* — is genuinely asymmetric in it
 
 The mark is therefore
 
-$$
-\text{MARK} \;=\; \operatorname{clip}_{[0,100]}\big(\text{FV} - \mathcal{D}\big),
+```math
+\text{MARK} \;=\; \mathrm{clip}_{[0,100]}\big(\text{FV} - \mathcal{D}\big),
 \qquad \mathcal{D} \ge 0
-$$
+```
 
 where $\mathcal{D}$ is a credibility-weighted, soft-capped sum of itemized risk premia.
 **$\mathcal{D} \ge 0$ is structural: the market never pays above fair value.** Positive
@@ -474,7 +474,7 @@ than defaulting to zero and silently asserting health.
 | $\hat\beta_{30}^{\text{rel}}$ | $\hat\beta_{30}$ minus the book median slope | $\ge 2$ eligible subjects |
 | $\text{RMSSD}$ | $\sqrt{\frac{1}{k-1}\sum (y_i - y_{i-1})^2}$ over the **last 10** prints on the vol basis | $k \ge 4$ |
 | $\text{volRatio}$ | RMSSD over the book median RMSSD | $\ge 2$ eligible |
-| $\text{semiDev}$ | $\sqrt{\frac1k \sum \min(0,\, y_i - \mu)^2}$ — downside only, last 10 | $k \ge 3$ |
+| $\text{semiDev}$ | $`\sqrt{\frac1k \sum \min(0,\, y_i - \mu)^2}`$ — downside only, last 10 | $k \ge 3$ |
 | $z_{\text{shock}}$ | latest exam vs winsorized trailing exam mean, over $\max(\text{MAD}, R_{\text{Exam}})$ | $\ge 3$ prior exams |
 | missStreak | consecutive prints under the estimate that stood *before each of them* | $n \ge 4$ |
 | $\Delta\alpha$ | latest edge over cohort minus trailing mean edge | $\ge 3$ referenced |
@@ -527,13 +527,13 @@ student needs answered earlier is *have I been printing under my own forecast lo
 that the misses stopped being noise?* That is a change-point problem, and Page's CUSUM is
 its classical solution.
 
-Over standardized walk-forward residuals $z_i = (y_i - \hat y_{i|<i}) / \max(\text{MAD},\, R_{c_i})$ —
+Over standardized walk-forward residuals $`z_i = (y_i - \hat y_{i|<i}) / \max(\text{MAD},\, R_{c_i})`$ —
 same units convention as §12, $R_{c}$ an sd in points — winsorized to $\pm 2.5$:
 
-$$
+```math
 S_i \;=\; \max\big(0,\; S_{i-1} - z_i - k\big), \qquad k = 0.4,
 \qquad \text{alarm} \iff S_i \ge h = 2.5
-$$
+```
 
 Three properties make this the right instrument here:
 
@@ -575,18 +575,18 @@ a month.
 
 | key | charge | cap |
 |---|---|---|
-| `unc` | $0.6\,(\hat\sigma - 5)^+$ — error bars beyond one clean exam's reliability | 6 |
-| `vol` | $0.55\,(\text{RMSSD} - 2)^+ \cdot \operatorname{clip}_{[0.6,1.6]}(\text{volRatio}) \;+\; 1.5\min(\text{volExp}-1.3,\,1)^+$ | 7 |
+| `unc` | $`0.6\,(\hat\sigma - 5)^+`$ — error bars beyond one clean exam's reliability | 6 |
+| `vol` | $`0.55\,(\text{RMSSD} - 2)^+ \cdot \mathrm{clip}_{[0.6,1.6]}(\text{volRatio}) \;+\; 1.5\min(\text{volExp}-1.3,\,1)^+`$ | 7 |
 | `mom` | $(-\hat\beta_{30})^+ \cdot H$ — points bled over one horizon | 7 |
-| `lag` | $0.8\,(-\hat\beta_{30}^{\text{rel}})^+ \cdot H$ — trailing the book while nominally flat | 4 |
-| `shock` | $1.6\,(-z_{\text{shock}})^+ \cdot \text{decay}(\text{prints since},\ \text{age})$ | 6 |
-| `down` | $0.4\,\text{semiDev} + 0.7\min(\text{miss},4) + 0.5\min(\text{downStreak},4)$ | 6 |
-| `cw` | $z_{\text{cw}} < 0$: $1.4\,\lvert z_{\text{cw}}\rvert + 0.5\min(-\hat\beta^{cw}_{30},3)^+$ — else $-\eta\min(1.4 z_{\text{cw}},3)$ | 6 / −1.05 |
-| `alpha` | $0.5\,(-\Delta\alpha)^+ + 0.35\,(-\alpha_{\text{latest}})^+$ | 5 |
+| `lag` | $`0.8\,(-\hat\beta_{30}^{\text{rel}})^+ \cdot H`$ — trailing the book while nominally flat | 4 |
+| `shock` | $`1.6\,(-z_{\text{shock}})^+ \cdot \text{decay}(\text{prints since},\ \text{age})`$ | 6 |
+| `down` | $`0.4\,\text{semiDev} + 0.7\min(\text{miss},4) + 0.5\min(\text{downStreak},4)`$ | 6 |
+| `cw` | $z_{\text{cw}} < 0$: $`1.4\,\lvert z_{\text{cw}}\rvert + 0.5\min(-\hat\beta^{cw}_{30},3)^+`$ — else $-\eta\min(1.4 z_{\text{cw}},3)$ | 6 / −1.05 |
+| `alpha` | $`0.5\,(-\Delta\alpha)^+ + 0.35\,(-\alpha_{\text{latest}})^+`$ | 5 |
 | `cusum` | $1.2\min(S - h + 1,\ 4)$ when alarmed | 5 |
 | `stale` | $(\text{staleDays} - 65)^+/30$, in **school days** | 4 |
-| `effort` | $4\,(1-\rho_a)^+$ — measured spend under an even share — else $-4\eta\min(\rho_a-1,1)$ | 6 / −1.4 |
-| `plan` | $1.25\,(1-\rho_p)^+$ — planned spend under an even share — else $-1.25\eta\min(\rho_p-1,1)$ | 2.5 / −0.44 |
+| `effort` | $`4\,(1-\rho_a)^+`$ — measured spend under an even share — else $-4\eta\min(\rho_a-1,1)$ | 6 / −1.4 |
+| `plan` | $`1.25\,(1-\rho_p)^+`$ — planned spend under an even share — else $-1.25\eta\min(\rho_p-1,1)$ | 2.5 / −0.44 |
 | `steady` | $-\min(2,\ 1 + 0.3(3.5 - \text{RMSSD})^+)$ when the consistency gate passes | −2 |
 
 The credit cap reads −1.05 rather than −3 because the 3 binds *before* $\eta$: the raw credit
@@ -609,9 +609,9 @@ unchanged; what disappears is the book ageing over holidays nobody could print i
 The last two lines are the only place the **effort spider** (D1, `lib/allocate.ts`) touches a
 price. Each desk's holding on a ring is read as its share of an *even* share of the same week,
 
-$$
+```math
 \rho \;=\; \frac{n\,x_i}{T},\qquad n = \text{desks in the plan},\quad T = \text{the token budget},
-$$
+```
 
 so $\rho = 1$ is a fair share, $\rho = 0$ is starvation, and the shortfall $(1-\rho)^+$ is charged
 linearly to the cap. The two rings are deliberately unequal — **4 points against 1.25**, roughly
@@ -653,9 +653,9 @@ one and says nothing at all about level. The premium is built so that it cannot 
 Elo is read as what it is actually estimating, **Bradley–Terry log-strength**. A rating difference of 400
 points is 10 : 1 odds by construction, so
 
-$$
+```math
 \lambda_i \;=\; \frac{r_i - \bar r}{400/\ln 10},\qquad \textstyle\sum_i \lambda_i = 0
-$$
+```
 
 is a log-odds you can read directly: $\lambda = 0.4$ means you would pick this desk over an average one
 about 60% of the time, $\lambda = 1$ about 73%. Dividing by the *sample* spread instead — a z-score —
@@ -672,9 +672,9 @@ readiness is itself a risk, and a loss-averse desk prices it.
 
 The multiplier on all of it is two credibilities in series:
 
-$$
+```math
 c \;=\; \underbrace{\frac{n_d}{n_d + 8}}_{\text{how much you answered}} \times \underbrace{w_{\text{ready}}}_{\text{how well it predicted}}
-$$
+```
 
 The second is earned. For every round in which two or more desks sat an exam, the ordering the pile
 implied **before that round** — duels dated strictly earlier; one recorded afterwards knows the answer —
@@ -696,10 +696,10 @@ record is individually removable, because a pile you can only wipe wholesale is 
 
 ## 16 · Aggregation, credibility, and the soft cap
 
-$$
+```math
 \mathcal{D} \;=\; C\,\tanh\!\left(\frac{1}{C}\cdot\frac{n}{n+\kappa}\sum_j \pi_j\right),
 \qquad C = 25,\quad \kappa = 2,\quad \textstyle\sum_j \pi_j \ \text{floored at } 0
-$$
+```
 
 The Bühlmann credibility factor $n/(n+\kappa)$ means a subject with two prints cannot be
 marked down hard on evidence it does not have — the same exposures charge a 10-print subject
@@ -736,11 +736,11 @@ them, and a plain percentile reports *no change*.
 For every print carrying $(r_i, N_i)$ and a year-level mark $g_i$, write the placement as a
 within-class $z$ and decompose the remainder:
 
-$$
+```math
 z_i = \Phi^{-1}\!\left(1 - \frac{r_i - 0.5}{N_i}\right),
 \qquad
 y_i - g_i \;=\; \underbrace{\pi_{t(i)}}_{\text{class}} + \underbrace{\beta_{s(i)}}_{\text{subject}} + \sigma_{\text{cls}}\, z_i + \varepsilon_i
-$$
+```
 
 $z_i$ absorbs where the student sits *inside* the class, so what remains is a property of the
 class: $\pi_t$ is the form class's strength over the year level in period $t$ — the **peer
@@ -756,11 +756,11 @@ Converting a class position to a **field** position needs the year-level spread,
 student's reports cannot identify. It comes from three adjustable settings — parallel classes
 $S$, year size, streaming tightness $\rho$:
 
-$$
+```math
 \sigma_{\text{cls}} = \sigma_{\text{yr}}\sqrt{1 - \rho^2\,(1 - v_S)},
 \qquad
 v_S = 1 - \tfrac{1}{S}\sum_j m_j^2, \quad m_j = S\big(\varphi(a_j) - \varphi(b_j)\big)
-$$
+```
 
 $v_S$ is the within-band variance left when a normal is cut into $S$ equal-probability bands.
 **The defaults assert nothing about the school**: $S = 1$ or $\rho = 0$ both give
@@ -812,13 +812,13 @@ rounds.
 The four ensemble members are four analysts, weighted by the walk-forward record of §8. Each
 is re-evaluated one horizon out and publishes an expected total return:
 
-$$
+```math
 r_m \;=\; \underbrace{(T_m - M_m)}_{\text{momentum}} \;+\;
           \underbrace{\varphi\,(M_m - \text{FV})}_{\text{convergence}} \;+\;
           \underbrace{c}_{\text{carry}},
 \qquad \varphi = 0.35,
 \qquad c = \widehat{\text{exam}}_{n+1} - \text{FV}
-$$
+```
 
 Convergence is an error-correction term: an analyst that thinks the subject is mispriced
 expects a share $\varphi$ of its own gap to close. The gap is measured against **fair value**,
@@ -832,18 +832,18 @@ targets are still quoted off the mark, because a target price is a marked price;
 convergence gap is measured off fair value.
 
 Ratings are relative: each subject's consensus is measured against the book benchmark
-$b = \operatorname{median}_s \bar r_s$, since a term in which everything rises is not a book
+$b = \mathrm{median}_s \bar r_s$, since a term in which everything rises is not a book
 full of buys. Write $D_{\text{core}}$ for the weighted spread of the momentum-plus-carry part
 — the part the consensus is actually made of — and $n_{\text{eff}} = (\sum w_m^2)^{-1}$ for
 Kish's effective analyst count:
 
-$$
+```math
 s = \sqrt{q\,H_d + \frac{D_{\text{core}}^2}{n_{\text{eff}}}},
 \qquad
 z = \frac{\bar r - b}{s},
 \qquad
 \boxed{\;z^\ast = z \cdot \frac{n}{n+3} \cdot 2^{-\text{stale}/35}\;}
-$$
+```
 
 Two notational cautions, since both symbols are overloaded elsewhere in this document.
 $H_d$ here is the horizon **in days**, not §15's $H = \text{horizon}/30$, because $q$ is
@@ -860,9 +860,9 @@ $n < 2$ → N/A.
 
 **Conviction is an edge, not a probability.** The number reported is
 
-$$
+```math
 100\big(2\Phi(|z^\ast|) - 1\big) = 100\big(P(\text{right}) - P(\text{wrong})\big)
-$$
+```
 
 which is the margin over a coin flip, not $P(\text{correct sign})$ — that is $\Phi(|z^\ast|)$,
 and at $z^\ast = 0$ it is 50%, not 0. Reporting the edge is the deliberate choice: a HOLD
@@ -874,14 +874,14 @@ would be worse than useless. A conviction of 50 here means 75/25.
 Urgency, not direction, from four normalized stress factors, each clipped to $[0,1]$ before
 weighting:
 
-$$
-\text{priority} = 100\cdot\operatorname{clip}_{[0,1]}\!\Big(
+```math
+\text{priority} = 100\cdot\mathrm{clip}_{[0,1]}\!\Big(
 0.35\,\tfrac{\text{gap}}{15} +
 0.30\,\tfrac{\text{FV}-p_{10}}{12} +
 0.20\,\tfrac{-\hat\beta_{30}}{5} +
 0.15\,\tfrac{\text{stale}-12}{30}
 \Big)
-$$
+```
 
 **gap** is the distance under the user's own target, $\text{target} - \text{MARK}$, counted
 only when positive and contributing nothing when no target is set. It is the one place the
@@ -1230,19 +1230,19 @@ genuinely new information in the room, and declining to price it is a choice rat
 So the next-exam call becomes a **performance-weighted linear pool** of the desk's predictive and
 the student's own, on the sitting they staked a call on:
 
-$$
+```math
 \mu \;=\; (1-w)\,\mu_m + w\,\mu_y, \qquad
 \sigma^2 \;=\; (1-w)\,\sigma_m^2 + w\,\sigma_y^2 + w(1-w)\,(\mu_y-\mu_m)^2 .
-$$
+```
 
 The weight is not asserted, it is **earned** from how the two forecasters have actually scored
 against each other on resolved sittings:
 
-$$
+```math
 \text{share} \;=\; \frac{S_m}{S_m + S_y}, \qquad
 w \;=\; \min\!\left(\text{share}\cdot\frac{n}{n+\kappa},\; w_{\max}\right),
 \qquad \kappa = 4,\; w_{\max} = 0.45 .
-$$
+```
 
 Three properties are what make this shippable rather than a licence to overrule the engine with a wish.
 
@@ -1284,10 +1284,10 @@ number about the whole term, elicited once, instead of six point forecasts nobod
 So the forward AGGREGATE (§18) becomes a performance-weighted pool of the desk's and yours, by the same
 moment-matched mixture as §27:
 
-$$
+```math
 \mu \;=\; (1-w)\,\mu_m + w\,\mu_y, \qquad
 \sigma^2 \;=\; (1-w)\,\sigma_m^2 + w\,\sigma_y^2 + w(1-w)\,(\mu_y-\mu_m)^2 ,
-$$
+```
 
 with $w$ earned from how the two of you have actually scored: your absolute error on the average against
 the register's as-of aggregate error over the same rounds, shrunk by $\kappa = 4$ pseudo-rounds and capped
@@ -1353,11 +1353,11 @@ $\kappa = 4$ pseudo-sittings toward **zero**, and capped at $w_{\max} = 0.35 < 0
 forecaster earns a smaller maximum seat than the person whose book it is. The next-exam call then
 pools three ways by the same moment match as §27,
 
-$$
+```math
 \mu \;=\; \sum_i w_i\,\mu_i, \qquad
 \sigma^2 \;=\; \sum_i w_i\big(\sigma_i^2 + (\mu_i - \mu)^2\big),
 \qquad i \in \{\text{desk},\ \text{you},\ \text{wire}\},
-$$
+```
 
 under one new constraint, the **joint ceiling**: $w_{\text{you}} + w_{\text{wire}} \le 0.6$, enforced
 by proportional scale-down so the two outside channels keep their relative standing — and the house
@@ -1440,24 +1440,24 @@ fails if a lifted literal reappears in the body that spends it.
 baseline, both projected through the subject's own knowledge/procedure/skill half-life $H$
 (`halfLifeOf`, log-domain blend of 14/45/120 days, default 45 when the mix is unset):
 
-$$
+```math
 \text{term}_{\text{stock}} = \text{STOCK\_W} \cdot \tanh\!\left(\frac{k_{14} - \text{baseline}}{\max(\text{baseline}, \text{STOCK\_FLOOR})}\right), \qquad \text{STOCK\_W} = 2.0,\ \text{STOCK\_FLOOR} = 240 \text{ min}.
-$$
+```
 
 **Mastery** (`mastery.ts`) — the one *measured* channel, everything else here is a self-report. A
 whole-paper prediction $P\cdot 100$ blends covered-topic EWMA mastery (decayed, prereq-gated in a
 cumulative subject) with the model's own mean on the uncovered share, then prices only the deviation
 from that same model mean, gated on enough marked topics and dampened while the count is thin:
 
-$$
+```math
 \text{term}_{\text{mastery}} = \text{MASTERY\_W} \cdot \tanh\!\left(\frac{100P - \text{modelMean}}{\text{MASTERY\_SCALE}}\right) \cdot \min\!\left(1, \frac{\text{totalMarks}}{\text{MASTERY\_FULL\_CREDIT\_MARKS}}\right),
-$$
+```
 
 The prereq gate is a **cap on the weakest prerequisite**, in the subject's own cumulativeness $C$:
 
-$$
+```math
 m_{\text{eff}} = (1-C)\,m_{\text{eff}}^{0} + C\cdot\min\!\Big(m_{\text{eff}}^{0},\ \min_j m_{\text{eff},j}^{0} + \text{PREREQ\_HEADROOM}\Big)
-$$
+```
 
 — the **minimum** over the named prerequisites, not their mean. A mean would let one failed
 prerequisite hide behind two strong ones, which is not a cap; the code averaged them for a whole
@@ -1472,15 +1472,17 @@ only term reading a measurement rather than a report.
 **Rest** (`rest.ts`) — three deterioration-only sub-terms, each $\le 0$, needing `REST_MIN_NIGHTS` = 7
 nights before pricing (14 for the baseline window):
 
-$$
+```math
 \text{chronic} = -\min\!\big(\text{REST\_CHRONIC\_W}\cdot\text{clamp}(\overline{h}_{56}-\overline{h}_{14},\,0,\,2),\ \text{REST\_CHRONIC\_CAP}\big), \qquad 0.75,\ 1.5
-$$
-$$
+```
+
+```math
 \text{reg} = -\text{REST\_REG\_W}\cdot\text{clamp}\!\left(\frac{\text{regSd}-60}{60},\,0,\,1\right), \qquad \text{REST\_REG\_W} = 0.5
-$$
-$$
+```
+
+```math
 \text{acute} = -\min\!\big(\text{REST\_ACUTE\_W}\cdot(\text{SHORT\_SLEEP\_H}-h_{\text{night before}}),\ \text{REST\_ACUTE\_CAP}\big), \qquad 0.8,\ 2.0
-$$
+```
 
 — chronic on a widening 56-vs-14-day sleep gap, reg on bedtime irregularity beyond
 `REST_REG_FREE_SD_MIN` = 60 min of sd, acute on a night under `SHORT_SLEEP_H` = 6.0h immediately
@@ -1493,7 +1495,7 @@ deviations — see the caveat below on why.
 The chronic term is also **disjoint from the encoding penalty**. A night under `SHORT_SLEEP_H` that
 was followed by a logged study session has already docked that session inside $k_{14}$, so it is
 dropped from the recent window before the baseline comparison — the chronic term prices
-$\overline{h}_{56} - \overline{h}_{14}^{\,\text{uncharged}}$, not $\overline{h}_{56} -
+$`\overline{h}_{56} - \overline{h}_{14}^{\,\text{uncharged}}`$, not $\overline{h}_{56} -
 \overline{h}_{14}$. A short night is therefore charged **once**: mechanistically against the session
 it degraded, or as a sustained baseline shift, never both. `mean14` itself stays unfiltered, because
 the absolute deficit is still worth showing even where it is not priced.
@@ -1501,9 +1503,9 @@ the absolute deficit is still worth showing even where it is not priced.
 **Disruption** (`disrupt.ts`) — a decaying shock, not a flat deduction, only priced against a live
 sitting to recover against:
 
-$$
+```math
 \text{term} = -\min\!\left(\sum_i \text{DISRUPT\_SEV}[k_i]\cdot\Big(0.5+\tfrac{0.5\min(d_i,7)}{7}\Big)\cdot e^{-\Delta_i/\text{DISRUPT\_TAU}},\ \text{DISRUPT\_CAP}\right),
-$$
+```
 
 severity `illness`/`family` = 1.5, `event` = 0.75, `other` = 1.0, duration credit capped at a week,
 recovery time constant `DISRUPT_TAU` = 10 days, whole-channel cap `DISRUPT_CAP` = 2.5.
@@ -1511,7 +1513,7 @@ recovery time constant `DISRUPT_TAU` = 10 days, whole-channel cap `DISRUPT_CAP` 
 **Anxiety and chronotype** (`signalread.ts`) — the smallest, most situational terms, each firing only
 near a live sitting. Anxiety prices trait anxiety against relative **stakes**, one-sided — a
 heavier-than-typical paper charges a self-reported anxious student, an easy one never credits them:
-$\text{pts} = -\text{ANX\_W}\cdot\max\big(0,\tfrac{\text{anx}-\text{ANX\_MID}}{\text{ANX\_SPAN}}\big)\cdot\text{clamp}(\tfrac{\text{weight}}{\text{typicalWeight}}-1,\,0,\,1)$,
+$`\text{pts} = -\text{ANX\_W}\cdot\max\big(0,\tfrac{\text{anx}-\text{ANX\_MID}}{\text{ANX\_SPAN}}\big)\cdot\text{clamp}(\tfrac{\text{weight}}{\text{typicalWeight}}-1,\,0,\,1)`$,
 `ANX_W` = 1.5, `ANX_MID` = 3, `ANX_SPAN` = 2. This is **attentional control theory** (Eysenck et al.
 2007) — evaluative pressure consuming the working-memory resources a hard paper needs — and *not*
 the Yerkes–Dodson arousal inverted-U this section, the constant's comment and the code comment all
@@ -1520,9 +1522,9 @@ account would have to credit the low-stakes side, which this term deliberately d
 prices sitting-time synchrony against a self-reported owl/lark as a
 **continuous** function of the sitting hour:
 
-$$
+```math
 \text{pts} = -\text{CHRONO\_W}\cdot\tanh\!\left(\frac{|h - \text{CHRONO\_PEAK\_HOUR}[c]|}{\text{CHRONO\_TAPER\_H}}\right), \qquad \text{lark } 9,\ \text{owl } 16,\ \text{CHRONO\_W} = 0.75,\ \text{CHRONO\_TAPER\_H} = 6
-$$
+```
 
 — zero at the chronotype's own peak, saturating past half a school day out, and identical for both
 chronotypes at equal misalignment. It used to be a **cliff**: an owl sitting at or before 9am was
@@ -1535,15 +1537,15 @@ small.
 
 **Attendance** (`signalread.ts`, `mastery.ts`) — one function, one scale, spent two ways. The shave
 
-$$
+```math
 s(\text{pct}) = \text{clamp}\!\left(\frac{\text{ATTEND\_FULL\_PCT}-\text{pct}}{100},\,0,\,1\right)\cdot\text{ATTEND\_SHAVE\_W}, \qquad 95,\ 0.5
-$$
+```
 
 is the share of syllabus an attendance shortfall is treated as having cost — half rather than all,
 because a missed class is usually recoverable from notes or a peer. A desk **with** a topic
 breakdown spends it on mass: `mastery.ts` moves $s$ of covered mass to the neutral side. A desk
 **without** one has no mass to move, so it spends the same $s$ on the mastery channel's own point
-weight, $\text{pts} = -\text{MASTERY\_W}\cdot s$ (−0.30 pts at 75% attended).
+weight, $`\text{pts} = -\text{MASTERY\_W}\cdot s`$ (−0.30 pts at 75% attended).
 
 The two paths cannot be numerically identical — the topic path's effect scales with the desk's own
 mastery-vs-model gap, which a desk with no topics has no way to know — but they now derive from one
@@ -1554,9 +1556,9 @@ selected by nothing more than whether a topic list happened to exist.
 
 **Traits** (`traits.ts`) — the one variance-only term, never a level effect:
 
-$$
+```math
 \text{sdMult} = \text{clamp}\big(1 + \text{TRAIT\_MARKER\_W}(1-\delta) + \text{TRAIT\_SAMPLING\_W}(1-\beta)(1+u) + t + b,\ 1,\ \text{TRAIT\_SDMULT\_CAP}\big),
-$$
+```
 
 marker noise `TRAIT_MARKER_W` = 0.20 on $(1-\text{determinism})$, sampling noise `TRAIT_SAMPLING_W` =
 0.15 on $(1-\text{breadth})$ scaled up by topic unevenness, a flat +0.05 when ≥25% of marks carry a
@@ -1565,16 +1567,16 @@ component is $\ge 0$, so the multiplier can only widen a forecast, never move it
 
 **The clamp, the credibility, and the shift.** Every candidate term — each already scaled by its own
 credibility multiplier $a_k$, see *Each channel earns its own credibility* below — sums, unclamped, to
-`rawSum`; the priced `adj` is $\text{clamp}(\text{rawSum},\,\pm\text{SIGNAL\_ADJ\_CAP})$, rounded to
+`rawSum`; the priced `adj` is $`\text{clamp}(\text{rawSum},\,\pm\text{SIGNAL\_ADJ\_CAP})`$, rounded to
 2dp, with `SIGNAL_ADJ_CAP` = 4 — set near `EFFORT_ACTUAL_W`, the layer's closest sibling. The layer's
 weight is earned exactly like §27/§29's, on `signalskill.ts`'s own walk-forward replay (as-of each
 resolved exam round, with the state book filtered to what was logged strictly before that round's
 resolution) — and on the **reshaped** `adj`, so the weight is earned by the same adjustment the board
 applies:
 
-$$
+```math
 w = \text{clamp}\!\left(\frac{n\cdot\text{rawShare} + \kappa\cdot\text{SIGNAL\_PRIOR}}{n+\kappa},\ 0,\ \text{SIGNAL\_CAP}\right), \qquad \kappa = \text{SIGNAL\_KAPPA} = 2,\ \text{SIGNAL\_CAP} = 0.35,\ \text{SIGNAL\_PRIOR} = 0.3.
-$$
+```
 
 `SIGNAL_CAP` sits under `SELF_POOL_CAP` (0.45) on purpose — a self-logged state channel earns a
 smaller seat than the self-forecast channel, because it is evidence about *conditions*, not a call on
@@ -1590,9 +1592,9 @@ shift rounds to under 0.05 at 1dp and `sdMult` is exactly 1.
 display-only ranker (`valueOfInformation`) telling a student which missing input buys back the most
 forecast precision per minute logged, scored by
 
-$$
+```math
 \text{score} = \frac{\text{gainPts}}{1 + \text{effortMin}/\text{VOI\_EFFORT\_SCALE}}, \qquad \text{VOI\_EFFORT\_SCALE} = 30,
-$$
+```
 
 over a fixed menu of presence/absence/size heuristics, each with its own conservatism argument rather
 than a fitted term: no rest logs at all books-wide (`VOI_REST_GAIN` = 1.5pts, `VOI_REST_EFFORT` = 10
@@ -1612,10 +1614,10 @@ unmoved by its existence regardless of what it returns.
 The SIGNALS view shows each term column as its *Shapley value* in the clamped coalitional game
 (`quant/signals/shapley.ts`), not its raw read:
 
-$$
-v(S) = \operatorname{clip}_{\pm\text{CAP}}\!\Big(\sum_{j\in S}\pi_j\Big),\qquad
+```math
+v(S) = \mathrm{clip}_{\pm\text{CAP}}\!\Big(\sum_{j\in S}\pi_j\Big),\qquad
 \varphi_k = \sum_{S\subseteq N\setminus\{k\}} \frac{|S|!\,(n-|S|-1)!}{n!}\big[v(S\cup\{k\}) - v(S)\big].
-$$
+```
 
 The efficiency axiom gives $\sum_k \varphi_k = v(N) - v(\emptyset) = \text{adj}$ exactly, cap binding
 or not; symmetry splits a bound cap evenly between equal claimants rather than by declaration order;
@@ -1625,7 +1627,7 @@ table's own additivity claim approximate. Displayed cells are rounded to 2dp wit
 on the largest line, `mark.ts`'s own attribution rule, so the shown row sums to the shown `ADJ` too.
 
 This replaced a drop-one marginal, $\text{adj(full)} - \text{adj(drop } k)$, which is
-$\text{cap} - \text{clamp}(S - \pi_k,\,\pm\text{cap})$ once the clamp binds and therefore not linear in
+$`\text{cap} - \text{clamp}(S - \pi_k,\,\pm\text{cap})`$ once the clamp binds and therefore not linear in
 $\pi_k$: with two terms at +3 each ($S=+6$, capped `adj = +4`), each marginal read
 $4 - \text{clamp}(3,\pm4) = +1$ and the row summed to +2 beside an `ADJ` of +4. This section used to
 explain that at length. The explanation was correct and the design was wrong, so the design changed.
@@ -1639,11 +1641,11 @@ overshoot a bound cap — that card says so, on its clamp step, whenever the cla
 in `quant/signals/params.ts` — that is the *prior*, a claim about how much each mechanism is worth.
 It stays. What measurement adds is one multiplier per channel:
 
-$$
-\text{adj} = \operatorname{clip}_{\pm\text{CAP}}\!\Big(\sum_k a_k\,\pi_k\Big),\qquad
-a_k = \operatorname{clamp}\!\big(\operatorname{shrink}(\tilde a_k,\; n_k,\; 1,\; \kappa_{\text{ch}}),\;
+```math
+\text{adj} = \mathrm{clip}_{\pm\text{CAP}}\!\Big(\sum_k a_k\,\pi_k\Big),\qquad
+a_k = \mathrm{clamp}\!\big(\mathrm{shrink}(\tilde a_k,\; n_k,\; 1,\; \kappa_{\text{ch}}),\;
 a_{\min},\, a_{\max}\big).
-$$
+```
 
 $\hat a_k$ is fitted by coordinate descent over the same walk-forward CRPS the layer's own weight is
 scored on, one bracketed 1-D search per channel per sweep (`quant/fit.ts`: a grid over the whole
