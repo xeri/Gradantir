@@ -1,4 +1,7 @@
-# GRADE·EXCHANGE
+# GRADANTIR
+
+*also known as Grade Exchange. The product name is Gradantir; the code, the store key,
+and the export format still say `grade-exchange`, and stay that way for now.*
 
 **A risk-adjusted pricing engine for academic performance under severe small-sample constraints.**
 
