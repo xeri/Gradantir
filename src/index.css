@@ -1,12 +1,20 @@
 @import "tailwindcss";
 
+/* The Gradantir Console palette. Mirrors src/theme.ts — the two must agree,
+   since components read the TS constants while this file styles everything
+   outside React's reach (selection, scrollbars, KaTeX, the tape).
+   --gx-amber is a historical name now holding the brand blue; see theme.ts. */
 :root {
-  --gx-bg: #0a0d12;
-  --gx-panel: #0f131a;
-  --gx-line: #1f2733;
-  --gx-amber: #e8a33d;
-  --gx-text: #dfe5ec;
-  --gx-dim: #97a1b2;
+  --gx-bg: #0a0c10;
+  --gx-panel: #090b0e;
+  --gx-line: #171a20;
+  --gx-amber: #2244ff;
+  --gx-brand-bright: #7c93ff;
+  --gx-text: #e2e4e8;
+  --gx-dim: #9ca1a9;
+  /* The 1px grid gap that draws every panel divider: a grid painted this color
+     with cells painted --gx-panel yields uniform hairlines without borders. */
+  --gx-gap: #14171e;
   color-scheme: dark;
 }
 
@@ -17,7 +25,7 @@ body {
 }
 
 ::selection {
-  background: rgba(232, 163, 61, 0.35);
+  background: rgba(34, 68, 255, 0.35);
 }
 
 /* Thin, dark, square scrollbars — part of the machine. #5A6478, not the old
