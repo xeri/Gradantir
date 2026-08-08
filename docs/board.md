@@ -21,15 +21,22 @@ the point rather than as a leak.
 | id | status | kind | title | artifact | touches | gate |
 |---|---|---|---|---|---|---|
 | audit-2 | active | model | Prediction-math audit Part II, §10–19 | specs/2026-07-31-prediction-math-audit-design.md | src/lib/quant/signals/**, src/lib/derive/** | moves |
-| accuracy-a | active | model | Accuracy Program Phase A — a gate that separates skill from luck | specs/2026-07-31-accuracy-program-design.md + plans/2026-07-31-accuracy-program-phase-a.md | src/lib/quant/eval/** | neutral |
+| accuracy-a | done | model | Accuracy Program Phase A — a gate that separates skill from luck | specs/2026-07-31-accuracy-program-design.md + plans/2026-07-31-accuracy-program-phase-a.md | src/lib/quant/eval/** | neutral |
 | wire-mind | open | feature | Wire Mind — give the wire a clock and a scored forward surface | specs/2026-08-01-wire-mind-design.md | src/lib/wire/**, src/views/** | moves |
 | console | open | overhaul | Console revamp — the zero-whitespace grid shell | none yet | src/views/**, src/components/**, src/theme.ts, src/index.css | neutral |
 
 **Known conflicts.** `wire-mind` and `console` both claim `src/views/**`. Wire
 Mind rebuilds the forward-facing screens, so anything pixel-matched before it
 lands is built twice — sequence the console shell and the dense tables first, and
-leave the wire's own screens until after. `accuracy-a` is backend-only and
-gate-neutral by construction, so it runs alongside either.
+leave the wire's own screens until after.
+
+**Sequencing note, now that `accuracy-a` has landed.** Phase A had to precede the
+audit's §8 (`fit.ts` + `earned.ts`), because after it the baseline has a new
+shape and each channel's conversion is gated against it. `fit.ts` is already in;
+`earned.ts` is still on the old score-share estimator, so §8 is the next audit
+step and it is now correctly ordered. Phases B–E of the accuracy program need
+their own plans written against the numbers Phase A produced — the MDE (±2.12
+points) says which of them this book can actually adjudicate.
 
 ## Loose ends
 

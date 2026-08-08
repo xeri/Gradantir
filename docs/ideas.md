@@ -64,6 +64,34 @@ pairwise term is barely identified from one student's log — it would need the
 same hard shrinkage toward zero interaction that `BIAS_KAPPA_SUBJECT` applies to
 the per-subject offsets.
 
+### Settle the ensemble's moment match on synthetic books, not on the fixture
+
+**Source:** the standard Student-t moment identity $\mathrm{Var}=s^2\nu/(\nu-2)$,
+against the audit's Part II §10.2 · **Plugs into:** the moment match in
+`ensemble.ts` (`sd = √variance` shipped as the t *scale*) and
+`ENSEMBLE_DISPERSION` in `params.ts` · **Scored on:** realized `cover90` over
+`eval/synth.ts` books at **matched truth**, then the gate's verdict on the real
+fixture · **Status:** open, and newly decidable.
+
+Phase A's generator says the under-coverage is **structural**: over 840 folds
+from 30 books drawn from the model's own assumptions — local-level walk, the
+model's own $q=0.06$, per-type observation noise, no unmodelled difficulty —
+realized 90% coverage is **0.864, not 0.90**. There is nothing left for
+misspecification to explain, so the shortfall is arithmetic in the predictive
+itself.
+
+§10.2 names a candidate: the mixture is moment-matched to a *variance* and then
+shipped as a t *scale* at $\nu = 3+n$. On the real fixture that fix cannot be
+read, because `ENSEMBLE_DISPERSION = 1.15` was swept against CRPS and is
+absorbing whatever the error is — the two are confounded, and the fixture's MDE
+(±2.12 pts) is far too wide to separate them. On synthetic books the truth is
+known and the sample size is whatever the question needs, so the fix can be
+scored directly: apply $s=\sqrt{\mathrm{Var}\,(\nu-2)/\nu}$, hold the dispersion
+markup at 1.0, and read `cover90` back. If it lands at 0.90 the markup was the
+moment error all along and retires; if it does not, the loss is somewhere else
+and this is ruled out cheaply. Either answer is worth having, and neither is
+obtainable from one book of ten desks.
+
 ### Fitting $\eta$ and the premium weights
 
 **Source:** §23, "chosen, not fitted" · **Plugs into:** `mark.ts`, `params.ts` ·
