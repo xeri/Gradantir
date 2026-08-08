@@ -1169,6 +1169,36 @@ On the committed fixture the verdict reproduces the post-mortem's own finding �
 (skill ≈ 0.26), a mean that is easier to forecast than its parts, honest under-coverage, a positive
 optimism bias, and at least one member the ablation flags for pruning.
 
+### What the gate can and cannot detect
+
+A verdict is a **paired cluster bootstrap**, not an inequality. The candidate's per-fold CRPS is
+differenced against the committed baseline's fold-for-fold on the deterministic key
+`subjectId|targetDate|printId`, and the resampling unit is the **subject**, not the fold: prints within a
+subject share a tape, a pool and an ability path, so resampling them individually would report an
+interval several times too narrow. The 90% percentile interval gives three verdicts —
+
+| interval | verdict | what happens |
+|---|---|---|
+| entirely below 0 | `IMPROVED` | ship; regenerate the baseline in the same commit |
+| straddles 0 | `INDISTINGUISHABLE` | ship only on a stated non-CRPS argument, recorded in the commit |
+| entirely above 0 | `REGRESSED` | revert |
+
+`INDISTINGUISHABLE` is the honest state of most changes on a ten-subject book, and saying so is the
+point. The scoreboard therefore also prints a **minimum detectable effect** — an upper bound, in
+score points, on the smallest CRPS improvement this book could resolve at 80% power. It is not a
+flattering number: on the committed fixture it is **±2.12 points against a mean CRPS of 6.8**, so a
+method worth a fifth of a point is a method this book cannot adjudicate, whatever its merits. That is
+the answer to "how much can this engine be improved, *measurably*, on the evidence available", and it
+is why §23's biggest wins are the structural ones rather than the tuning ones.
+
+Two guards sit beside the verdict. `history.json` records every baseline regeneration, and the gate
+floors current skill against the **best** historical value rather than the previous one, so a run of
+individually-defensible neutral steps cannot walk downhill. And the aggregate target is now scored by
+CRPS and coverage rather than MAE alone — which is how the engine's own scoreboard came to state
+plainly that its bottom-up aggregate is **beaten by a last-round-carry-forward naive** (CRPS 4.32
+against the naive's 3.18, a skill of −0.36). MAE alone had hidden that for the whole life of the
+project: the aggregate's MAE is better than its components', which is true and was read as sufficient.
+
 ### The forecast/bias register — derived, never stored
 
 The register was originally a *log*: the app recorded its own live forecast on every render and persisted
@@ -1204,14 +1234,17 @@ Core numbers are **generated, never hand-typed**, and a change ships only if it 
 
 1. Branch. State the hypothesis as a skill claim (e.g. "damping the drift lowers CRPS").
 2. Change one equation or constant — `params.ts` is the preferred surface.
-3. `npm run gate` — walk-forward CRPS must not regress vs `eval/__snapshots__/baseline.json`. If it does,
-   revert; never retune to chase §21.
-4. `npm run gen:table` — regenerate the §21 rows and the skill baseline.
+3. `npm run gate` — the paired bootstrap must not return `REGRESSED` against
+   `eval/__snapshots__/baseline.json`. If it does, revert; never retune to chase §21. An
+   `INDISTINGUISHABLE` verdict ships only with the non-CRPS argument written into the commit message.
+4. `npm run gen:table` — regenerate the §21 rows.
 5. Paste the regenerated numbers into README §21 **and** `mark.book.test.ts` in the same commit.
 6. Update any affected derivation builder's LaTeX/substitution (`src/lib/derive/*`).
 7. `npm test` — §21, the derivation reconciliation, the determinism guards and the scoreboard verdict all
-   green. Update `baseline.json` deliberately, in the same commit, with the before/after skill in the
-   message.
+   green.
+8. `npm run gen:baseline -- "<what moved and from what to what>"` — regenerate the skill baseline
+   deliberately, in the same commit, and let it append its own row to `history.json`. The note is
+   required, because a baseline nobody can date and attribute is a baseline nobody can audit.
 
 A "phase" of the ongoing model work is a sequence of these commits; each is independently gated, so a bad
 step cannot hide behind a good one and §21 can only ever state something the build proves.
