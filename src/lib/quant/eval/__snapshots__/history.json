@@ -1,0 +1,10 @@
+[
+  {
+    "asOf": "2026-07-21",
+    "modelVersion": "gx-1",
+    "perSubjectSkill": 0.2598,
+    "cover90": 0.8214,
+    "meanSkill": -0.3586,
+    "note": "Phase A Task 4: snapshot v2 — per-fold vector added; engine unchanged from the gx-1 baseline of 2026-07-21"
+  }
+]

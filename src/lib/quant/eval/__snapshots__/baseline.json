@@ -1,11 +1,413 @@
 {
-  "_comment": "Skill baseline of the gx-1 engine on the committed fixture at 2026-07-21. Regenerated deliberately (never by hand) when a core recalibration ships; the gate fails if per-subject skill regresses. See README §26. Last regen: C4 predictive-dispersion markup (ENSEMBLE_DISPERSION=1.15) — widening the too-tight bands lowers walk-forward CRPS (skill 0.256→0.26) and lifts realized 90% coverage 0.79→0.82; stacks on C1 damped drift.",
+  "_comment": "Phase A Task 4: snapshot v2 — per-fold vector added; engine unchanged from the gx-1 baseline of 2026-07-21",
   "modelVersion": "gx-1",
-  "n": 56,
-  "perSubjectSkill": 0.26,
-  "perSubjectMae": 9.06,
-  "perSubjectBias": 1.42,
-  "cover90": 0.82,
-  "meanMae": 6.03,
-  "meanNaiveMae": 4.82
+  "asOf": "2026-07-21",
+  "aggregate": {
+    "n": 56,
+    "perSubjectSkill": 0.2598,
+    "perSubjectMae": 9.0609,
+    "perSubjectBias": 1.4206,
+    "cover90": 0.8214,
+    "meanMae": 6.0273,
+    "meanNaiveMae": 4.8167,
+    "meanCrps": 4.322,
+    "meanCrpsNaive": 3.1812,
+    "meanSkill": -0.3586,
+    "meanCover90": 0.6,
+    "mdeBound": 2.1184
+  },
+  "folds": [
+    {
+      "k": "id-1fli4kcomrvqq1c8|2025-08-01|e-econ-2025-08-01-c",
+      "c": "id-1fli4kcomrvqq1c8",
+      "crps": 10.6922,
+      "crpsNaive": 18.9664,
+      "pit": 0.8499
+    },
+    {
+      "k": "id-1fli4kcomrvqq1c8|2025-12-03|e-econ-2025-12-03-c",
+      "c": "id-1fli4kcomrvqq1c8",
+      "crps": 7.8317,
+      "crpsNaive": 7.2032,
+      "pit": 0.8594
+    },
+    {
+      "k": "id-1fli4kcomrvqq1c8|2025-12-03|e-econ-2025-12-03-x",
+      "c": "id-1fli4kcomrvqq1c8",
+      "crps": 3.1471,
+      "crpsNaive": 5.9178,
+      "pit": 0.5138
+    },
+    {
+      "k": "s-bus|2025-08-01|e-econ-2025-08-01-c",
+      "c": "s-bus",
+      "crps": 10.6922,
+      "crpsNaive": 18.9664,
+      "pit": 0.8499
+    },
+    {
+      "k": "s-bus|2025-12-03|e-econ-2025-12-03-c",
+      "c": "s-bus",
+      "crps": 7.8317,
+      "crpsNaive": 7.2032,
+      "pit": 0.8594
+    },
+    {
+      "k": "s-bus|2025-12-03|e-econ-2025-12-03-x",
+      "c": "s-bus",
+      "crps": 3.1471,
+      "crpsNaive": 5.9178,
+      "pit": 0.5138
+    },
+    {
+      "k": "s-bus|2026-04-08|e-bus-2026-04-08-x",
+      "c": "s-bus",
+      "crps": 4.4207,
+      "crpsNaive": 3.2813,
+      "pit": 0.7273
+    },
+    {
+      "k": "s-econ|2025-08-01|e-econ-2025-08-01-c",
+      "c": "s-econ",
+      "crps": 10.6922,
+      "crpsNaive": 18.9664,
+      "pit": 0.8499
+    },
+    {
+      "k": "s-econ|2025-12-03|e-econ-2025-12-03-c",
+      "c": "s-econ",
+      "crps": 7.8317,
+      "crpsNaive": 7.2032,
+      "pit": 0.8594
+    },
+    {
+      "k": "s-econ|2025-12-03|e-econ-2025-12-03-x",
+      "c": "s-econ",
+      "crps": 3.1471,
+      "crpsNaive": 5.9178,
+      "pit": 0.5138
+    },
+    {
+      "k": "s-econ|2026-04-08|e-econ-2026-04-08-x",
+      "c": "s-econ",
+      "crps": 10.2657,
+      "crpsNaive": 17.5994,
+      "pit": 0.0951
+    },
+    {
+      "k": "s-eng|2024-08-09|e-eng-2024-08-09-c",
+      "c": "s-eng",
+      "crps": 21.98,
+      "crpsNaive": 21.9271,
+      "pit": 0.0014
+    },
+    {
+      "k": "s-eng|2024-12-05|e-eng-2024-12-05-c",
+      "c": "s-eng",
+      "crps": 9.8976,
+      "crpsNaive": 11.5687,
+      "pit": 0.0794
+    },
+    {
+      "k": "s-eng|2024-12-05|e-eng-2024-12-05-x",
+      "c": "s-eng",
+      "crps": 3.9559,
+      "crpsNaive": 16.8407,
+      "pit": 0.6642
+    },
+    {
+      "k": "s-eng|2025-04-30|e-eng-2025-04-30-x",
+      "c": "s-eng",
+      "crps": 2.9558,
+      "crpsNaive": 5.458,
+      "pit": 0.3732
+    },
+    {
+      "k": "s-eng|2025-08-01|e-eng-2025-08-01-c",
+      "c": "s-eng",
+      "crps": 2.1155,
+      "crpsNaive": 2.4609,
+      "pit": 0.4214
+    },
+    {
+      "k": "s-eng|2025-08-01|e-eng-2025-08-01-x",
+      "c": "s-eng",
+      "crps": 2.3899,
+      "crpsNaive": 2.9746,
+      "pit": 0.5345
+    },
+    {
+      "k": "s-eng|2025-12-03|e-eng-2025-12-03-c",
+      "c": "s-eng",
+      "crps": 10.1127,
+      "crpsNaive": 11.1407,
+      "pit": 0.0359
+    },
+    {
+      "k": "s-eng|2025-12-03|e-eng-2025-12-03-x",
+      "c": "s-eng",
+      "crps": 2.0722,
+      "crpsNaive": 2.6141,
+      "pit": 0.5975
+    },
+    {
+      "k": "s-eng|2026-04-08|e-eng-2026-04-08-x",
+      "c": "s-eng",
+      "crps": 2.6711,
+      "crpsNaive": 4.7812,
+      "pit": 0.343
+    },
+    {
+      "k": "s-geo|2024-08-09|e-geo-2024-08-09-c",
+      "c": "s-geo",
+      "crps": 17.7104,
+      "crpsNaive": 12.2375,
+      "pit": 0.0216
+    },
+    {
+      "k": "s-geo|2024-12-05|e-geo-2024-12-05-c",
+      "c": "s-geo",
+      "crps": 3.3327,
+      "crpsNaive": 4.3571,
+      "pit": 0.4174
+    },
+    {
+      "k": "s-geo|2024-12-05|e-geo-2024-12-05-x",
+      "c": "s-geo",
+      "crps": 5.6067,
+      "crpsNaive": 13.9474,
+      "pit": 0.6215
+    },
+    {
+      "k": "s-geo|2025-04-30|e-geo-2025-04-30-x",
+      "c": "s-geo",
+      "crps": 2.3681,
+      "crpsNaive": 3.4028,
+      "pit": 0.5842
+    },
+    {
+      "k": "s-geo|2025-08-01|e-geo-2025-08-01-c",
+      "c": "s-geo",
+      "crps": 10.9071,
+      "crpsNaive": 13.3627,
+      "pit": 0.0371
+    },
+    {
+      "k": "s-geo|2025-08-01|e-geo-2025-08-01-x",
+      "c": "s-geo",
+      "crps": 3.5218,
+      "crpsNaive": 3.4772,
+      "pit": 0.7746
+    },
+    {
+      "k": "s-geo|2025-12-03|e-geo-2025-12-03-c",
+      "c": "s-geo",
+      "crps": 2.3513,
+      "crpsNaive": 2.3742,
+      "pit": 0.3572
+    },
+    {
+      "k": "s-geo|2025-12-03|e-geo-2025-12-03-x",
+      "c": "s-geo",
+      "crps": 2.6982,
+      "crpsNaive": 5.383,
+      "pit": 0.384
+    },
+    {
+      "k": "s-geo|2026-04-08|e-geo-2026-04-08-x",
+      "c": "s-geo",
+      "crps": 9.2017,
+      "crpsNaive": 6.8259,
+      "pit": 0.0536
+    },
+    {
+      "k": "s-gra|2025-08-01|e-gra-2025-08-01-c",
+      "c": "s-gra",
+      "crps": 1.5687,
+      "crpsNaive": 1.2562,
+      "pit": 0.4585
+    },
+    {
+      "k": "s-gra|2025-12-03|e-gra-2025-12-03-c",
+      "c": "s-gra",
+      "crps": 3.3266,
+      "crpsNaive": 5.4018,
+      "pit": 0.2665
+    },
+    {
+      "k": "s-gra|2025-12-03|e-gra-2025-12-03-x",
+      "c": "s-gra",
+      "crps": 16.6906,
+      "crpsNaive": 18.0051,
+      "pit": 0.0048
+    },
+    {
+      "k": "s-lat|2024-08-09|e-lat-2024-08-09-c",
+      "c": "s-lat",
+      "crps": 19.6351,
+      "crpsNaive": 27.0955,
+      "pit": 0.0563
+    },
+    {
+      "k": "s-lat|2024-12-05|e-lat-2024-12-05-c",
+      "c": "s-lat",
+      "crps": 8.5275,
+      "crpsNaive": 16.9467,
+      "pit": 0.2363
+    },
+    {
+      "k": "s-lat|2024-12-05|e-lat-2024-12-05-x",
+      "c": "s-lat",
+      "crps": 16.4328,
+      "crpsNaive": 32.1063,
+      "pit": 0.8841
+    },
+    {
+      "k": "s-math|2024-08-09|e-math-2024-08-09-c",
+      "c": "s-math",
+      "crps": 7.5161,
+      "crpsNaive": 5.4951,
+      "pit": 0.9572
+    },
+    {
+      "k": "s-math|2024-12-05|e-math-2024-12-05-c",
+      "c": "s-math",
+      "crps": 10.1027,
+      "crpsNaive": 13.0068,
+      "pit": 0.9624
+    },
+    {
+      "k": "s-math|2024-12-05|e-math-2024-12-05-x",
+      "c": "s-math",
+      "crps": 3.4298,
+      "crpsNaive": 8.932,
+      "pit": 0.2811
+    },
+    {
+      "k": "s-math|2025-04-30|e-math-2025-04-30-x",
+      "c": "s-math",
+      "crps": 12.3496,
+      "crpsNaive": 22.9885,
+      "pit": 0.0468
+    },
+    {
+      "k": "s-math|2025-08-01|e-math-2025-08-01-c",
+      "c": "s-math",
+      "crps": 5.1889,
+      "crpsNaive": 7.467,
+      "pit": 0.8637
+    },
+    {
+      "k": "s-math|2025-08-01|e-math-2025-08-01-x",
+      "c": "s-math",
+      "crps": 3.2439,
+      "crpsNaive": 4.2944,
+      "pit": 0.3247
+    },
+    {
+      "k": "s-math|2025-12-03|e-math-2025-12-03-c",
+      "c": "s-math",
+      "crps": 14.0749,
+      "crpsNaive": 13.0082,
+      "pit": 0.9914
+    },
+    {
+      "k": "s-math|2025-12-03|e-math-2025-12-03-x",
+      "c": "s-math",
+      "crps": 2.1435,
+      "crpsNaive": 4.2177,
+      "pit": 0.483
+    },
+    {
+      "k": "s-math|2026-04-08|e-math-2026-04-08-x",
+      "c": "s-math",
+      "crps": 6.0527,
+      "crpsNaive": 19.3042,
+      "pit": 0.1695
+    },
+    {
+      "k": "s-phys|2024-08-09|e-phys-2024-08-09-c",
+      "c": "s-phys",
+      "crps": 3.1914,
+      "crpsNaive": 5.4951,
+      "pit": 0.2006
+    },
+    {
+      "k": "s-phys|2024-12-05|e-phys-2024-12-05-c",
+      "c": "s-phys",
+      "crps": 2.624,
+      "crpsNaive": 2.4398,
+      "pit": 0.6678
+    },
+    {
+      "k": "s-phys|2024-12-05|e-phys-2024-12-05-x",
+      "c": "s-phys",
+      "crps": 2.519,
+      "crpsNaive": 1.1438,
+      "pit": 0.4887
+    },
+    {
+      "k": "s-phys|2025-04-30|e-phys-2025-04-30-x",
+      "c": "s-phys",
+      "crps": 4.0064,
+      "crpsNaive": 2.4813,
+      "pit": 0.8476
+    },
+    {
+      "k": "s-phys|2025-08-01|e-phys-2025-08-01-c",
+      "c": "s-phys",
+      "crps": 1.2899,
+      "crpsNaive": 0.9563,
+      "pit": 0.4998
+    },
+    {
+      "k": "s-phys|2025-08-01|e-phys-2025-08-01-x",
+      "c": "s-phys",
+      "crps": 1.4489,
+      "crpsNaive": 2.4255,
+      "pit": 0.4778
+    },
+    {
+      "k": "s-phys|2025-12-03|e-phys-2025-12-03-c",
+      "c": "s-phys",
+      "crps": 3.5204,
+      "crpsNaive": 2.5218,
+      "pit": 0.1345
+    },
+    {
+      "k": "s-phys|2025-12-03|e-phys-2025-12-03-x",
+      "c": "s-phys",
+      "crps": 1.8651,
+      "crpsNaive": 1.7964,
+      "pit": 0.297
+    },
+    {
+      "k": "s-phys|2026-04-08|e-phys-2026-04-08-x",
+      "c": "s-phys",
+      "crps": 24.9198,
+      "crpsNaive": 21.9645,
+      "pit": 0.0001
+    },
+    {
+      "k": "s-spa|2024-08-09|e-spa-2024-08-09-c",
+      "c": "s-spa",
+      "crps": 2.3584,
+      "crpsNaive": 4.2384,
+      "pit": 0.4235
+    },
+    {
+      "k": "s-spa|2024-12-05|e-spa-2024-12-05-c",
+      "c": "s-spa",
+      "crps": 3.2363,
+      "crpsNaive": 3.6922,
+      "pit": 0.7604
+    },
+    {
+      "k": "s-spa|2024-12-05|e-spa-2024-12-05-x",
+      "c": "s-spa",
+      "crps": 2.737,
+      "crpsNaive": 1.775,
+      "pit": 0.4125
+    }
+  ]
 }
