@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_CALENDAR } from "../../calendar";
+import { correlatedSumSd } from "../aggregate";
 import { meanSkill } from "./skill";
 import type { GradeEntry, Subject } from "../../../types";
 
@@ -34,5 +35,39 @@ describe("meanSkill", () => {
   });
   it("is deterministic", () => {
     expect(meanSkill(subjects, entries, DEFAULT_CALENDAR)).toEqual(meanSkill(subjects, entries, DEFAULT_CALENDAR));
+  });
+});
+
+describe("meanSkill — the aggregate target is scored, not just measured", () => {
+  it("reports CRPS, skill and coverage beside MAE", () => {
+    const r = meanSkill(subjects, entries, DEFAULT_CALENDAR);
+    expect(r.points.length).toBeGreaterThan(0);
+    expect(Number.isFinite(r.crps)).toBe(true);
+    expect(Number.isFinite(r.crpsNaive)).toBe(true);
+    expect(r.crps).toBeGreaterThan(0);
+    // skill = 1 − crps/crpsNaive, the same definition backtest.ts uses.
+    expect(r.skill).toBeCloseTo(1 - r.crps / r.crpsNaive, 10);
+    expect(r.cover90).toBeGreaterThanOrEqual(0);
+    expect(r.cover90).toBeLessThanOrEqual(1);
+  });
+
+  it("gives every point a positive predictive scale", () => {
+    for (const p of meanSkill(subjects, entries, DEFAULT_CALENDAR).points) {
+      expect(p.sd).toBeGreaterThan(0);
+      expect(p.s.crps).toBeGreaterThan(0);
+    }
+  });
+
+  it("keeps the naive strictly walk-forward", () => {
+    // The naive's spread may only ever use rounds STRICTLY EARLIER than the
+    // one being scored. The first scored point therefore sees a one-element
+    // history and must fall back to the floor rather than to a zero spread.
+    const r = meanSkill(subjects, entries, DEFAULT_CALENDAR);
+    expect(r.points[0].naiveScores.crps).toBeGreaterThan(0);
+    expect(Number.isFinite(r.points[0].naiveScores.crps)).toBe(true);
+  });
+
+  it("widens the aggregate band under a positive correlation", () => {
+    expect(correlatedSumSd([3, 4], 0.5)).toBeGreaterThan(correlatedSumSd([3, 4], 0));
   });
 });
