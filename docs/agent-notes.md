@@ -1,0 +1,68 @@
+# Agent notes — the mutable half
+
+Everything here is expected to go stale. It lives apart from `AGENTS.md` so the
+always-loaded file can stay stable while this one churns. Prune it freely: an
+entry that is no longer true is worse than no entry, because an agent will follow
+it and cite this file as justification.
+
+Last verified: **2026-08-05**, branch `signals-audit`.
+
+## What a clean tree looks like
+
+`npm test` → **1329 passed, 2 failed** (105 files, ~40s). Those two are known and
+are not yours. If you see exactly these two, you have broken nothing.
+
+| Failing test | Symptom | Why it is not a product bug |
+|---|---|---|
+| `SpiderAllocator.test.tsx` › "draws the model only as a ghost…" | `expected … to contain '#E8A33D'` | The test asserts a literal hex. The Console retint (`c8b7f80`) moved the brand hue to `#2244FF`, so the assertion is stale, not the component. Fix by asserting `C.brand` from `src/theme.ts`. |
+| `derive.book.test.ts` › "every LaTeX string parses" | `Test timed out in 5000ms` | KaTeX-parses every derivation over the full fixture book. Machine-speed dependent, not a formula error. Raise the per-test timeout if it gets in the way. |
+
+`npm run gate` and `npx tsc --noEmit` are green.
+
+## Mid-flight
+
+`docs/board.md` owns this, and the session-start digest reads it aloud — do not
+duplicate the workstream list here or the two will drift. The only thing worth
+adding: branch `signals-audit` carries the prediction-math audit with **Part I
+done** (steps 1–3, Shapley, per-channel credibility), which is the context most
+of the recent commits assume.
+
+## Known-stale documentation
+
+- `.design-sync/conventions.md` still documents the pre-Console palette (amber
+  `#E8A33D`, green gain, red loss). `src/theme.ts` is authoritative. Adding or
+  renaming a `ui/` primitive also means hand-updating `ds-entry.ts`,
+  `componentSrcMap`, `dtsPropsFor` and `docsMap` — nothing auto-tracks.
+- Untracked scratch (`note.txt`, `.superpowers/sdd/**/progress.md`) carries a
+  longer deferred-bug list, and part of it is already closed — `4505e92`,
+  `dfee496` and `e4d536b` fixed the split / wire-settings / delete-cascade
+  entries it still lists as open. Check `git log` before believing any of it.
+
+## Changing the agent docs
+
+- Add a rule the **second** time something goes wrong, not the first. Delete it
+  on sight when it stops being true.
+- "Always X" / "never Y" belongs in a hook or a permission rule, not in prose.
+  Both live in `.claude/settings.json`; the hooks are two small node scripts in
+  `.claude/hooks/`, and deleting one is a legitimate fix.
+- Budget: `AGENTS.md` under ~115 lines, `CLAUDE.md` under ~25, each
+  `.claude/rules/*.md` under ~35. Instruction-following degrades with instruction
+  count, so every rule you add is paid for by the rules already there. Two
+  sections are worth their length and should be cut last: "the bar for new work"
+  (stops an agent shipping a correct but under-built feature) and "standing
+  brief" (stops it stopping at the task it was handed).
+- `docs/ideas.md` is a queue, not an archive. If it grows past ~10 live entries
+  the standing brief is producing more than the gate is consuming — ship or
+  reject, do not accumulate.
+- Each tracking file has exactly one owner and nothing is restated across them:
+  `board.md` owns in-flight work, `ideas.md` owns unproven candidates, this file
+  owns status and doc health. When the digest and a doc disagree, the digest is
+  reading the board, so fix the board.
+- Prune `board.md`: `done` workstream rows go when the branch reaches `main`
+  (move the artifact filename to Landed so the digest stays quiet), loose-end
+  rows go in the commit that fixes them.
+- Prefer symbols (`signalRead`, `markDesk`, `fitSignalChannels`) and README §
+  numbers to line numbers — line numbers drift on the next insertion.
+- Test a doc edit in a fresh session: ask the agent to summarise the rules it is
+  working under. Anything you wrote that does not come back is too long, too
+  vague, or in the wrong file.
