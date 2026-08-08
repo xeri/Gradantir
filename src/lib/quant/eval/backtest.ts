@@ -24,6 +24,12 @@ const NAIVE_SD_FLOOR = 3;
 export interface OneStep {
   subjectId: string;
   targetDate: string;
+  /**
+   * Id of the print being forecast. A desk sits an exam and hands in coursework
+   * on the same day 24 times over the committed fixture, so (subject, date) does
+   * NOT name a fold — only the print does. The skill baseline pairs on this.
+   */
+  targetId: string;
   type: GradeEntry["type"];
   y: number;
   pred: { mean: number; scale: number; df: number };
@@ -105,6 +111,7 @@ export function backtestSubject(
     points.push({
       subjectId,
       targetDate: target.date,
+      targetId: target.id,
       type: target.type,
       y: target.score,
       pred,

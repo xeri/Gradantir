@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "gate": "vitest run src/lib/quant/eval",
-    "gen:table": "vite-node src/lib/__fixtures__/gen-book-table.ts"
+    "gen:table": "vite-node src/lib/__fixtures__/gen-book-table.ts",
+    "gen:baseline": "vite-node src/lib/quant/eval/gen-baseline.ts"
   },
   "dependencies": {
     "@fontsource/archivo": "^5.1.0",

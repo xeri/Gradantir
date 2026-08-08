@@ -36,3 +36,5 @@ export type { BookBacktest, SubjectBacktest } from "./backtest";
 export type { MeanSkill, MeanPoint } from "./skill";
 export type { AblationRow } from "./ablation";
 export { scoreT, type Scores } from "./scoring";
+export { compareFolds, mdeBound, type Comparison, type ScoredFold, type Verdict } from "./compare";
+export { baselineFolds, foldsOf, snapshotOf, type BaselineSnapshot, type HistoryRow } from "./snapshot";

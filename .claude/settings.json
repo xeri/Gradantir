@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "deny": [
+      "Edit(src/lib/__fixtures__/book.json)",
+      "Write(src/lib/__fixtures__/book.json)",
+      "Edit(src/lib/quant/eval/__snapshots__/baseline.json)",
+      "Write(src/lib/quant/eval/__snapshots__/baseline.json)",
+      "Edit(data/**)",
+      "Write(data/**)"
+    ],
+    "allow": [
+      "Bash(npm test)",
+      "Bash(npm run gate)",
+      "Bash(npm run gen:table)",
+      "Bash(npm run build)",
+      "Bash(npx vitest run *)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/board.mjs",
+            "timeout": 15,
+            "statusMessage": "Reading the board"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/purity.mjs",
+            "timeout": 15,
+            "statusMessage": "Checking engine purity"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/typecheck.mjs",
+            "async": true,
+            "asyncRewake": true,
+            "timeout": 180,
+            "statusMessage": "Type-checking",
+            "rewakeSummary": "tsc --noEmit failed"
+          }
+        ]
+      }
+    ]
+  }
+}

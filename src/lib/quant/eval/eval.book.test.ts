@@ -3,7 +3,10 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parseImport } from "../../io";
 import { evaluateBook } from "./index";
+import { compareFolds, mdeBound } from "./compare";
+import { baselineFolds, foldsOf, type BaselineSnapshot } from "./snapshot";
 import baseline from "./__snapshots__/baseline.json";
+import history from "./__snapshots__/history.json";
 import type { AppData } from "../../../types";
 
 /**
@@ -66,9 +69,38 @@ describe("skill scoreboard — the engine's verdict on itself", () => {
     expect(sb.members.some((m) => m.delta < 0)).toBe(true);
   });
 
-  it("does not regress against the committed skill baseline", () => {
-    // The merge gate: a change may only ship if out-of-sample skill holds up.
-    expect(sb.book.skill).toBeGreaterThan(baseline.perSubjectSkill - 0.03);
-    expect(sb.book.cover90).toBeGreaterThan(baseline.cover90 - 0.05);
+  it("does not regress against the committed baseline, on a paired cluster bootstrap", () => {
+    // The merge gate. Pairs fold-for-fold against the committed per-fold
+    // vector and resamples SUBJECTS, because folds within a subject share a
+    // tape and are not independent. A change may ship on IMPROVED or on
+    // INDISTINGUISHABLE-with-a-stated-reason; REGRESSED reverts.
+    const r = compareFolds(baselineFolds(baseline as BaselineSnapshot), foldsOf(sb));
+    expect(r.unmatchedBase).toEqual([]);
+    expect(r.unmatchedNext).toEqual([]);
+    expect(r.verdict).not.toBe("REGRESSED");
+  });
+
+  it("has not walked downhill across baseline regenerations", () => {
+    // A sequence of individually-defensible INDISTINGUISHABLE steps can drift
+    // down. The floor is the BEST historical skill, not the previous one.
+    const best = history.reduce((a, h) => Math.max(a, h.perSubjectSkill), -Infinity);
+    expect(sb.book.skill).toBeGreaterThan(best - 0.05);
+  });
+
+  it("reports what it cannot detect", () => {
+    // Not an assertion about quality — an assertion that the harness states
+    // its own resolution. A gate that cannot say how small an effect it would
+    // miss is a gate nobody can calibrate their expectations against.
+    const mde = mdeBound(foldsOf(sb));
+    expect(mde).toBeGreaterThan(0);
+    expect(mde).toBeLessThan(baseline.aggregate.mdeBound + 0.5);
+  });
+
+  it("is honest that the aggregate currently loses to its own naive", () => {
+    // README §26 calls the all-subject mean the forecastable object. It is —
+    // relative to the components. It is NOT relative to carrying last round
+    // forward, and that is a defect, not a footnote. Phase C's reconciliation
+    // is the fix; this assertion flips in the same commit.
+    expect(sb.mean.skill).toBeLessThan(0);
   });
 });
